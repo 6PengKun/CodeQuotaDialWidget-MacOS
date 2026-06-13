@@ -2,6 +2,8 @@
 
 把 **Codex** 和 **GLM（智谱）** 的额度做成 macOS 桌面 Widget。
 
+<img src="assets/example.png" alt="example" style="zoom:50%;" />
+
 当前仓库的安装方式已经改成：
 
 - 机器相关配置外置到 `local-config.env`
@@ -48,12 +50,15 @@ LaunchAgent
 
 ## 前提条件
 
-需要这些环境：
+**需要这些环境：**
 
-- macOS 14+
-- Xcode 16+
-- 已登录 Xcode 的 Apple ID
-- Codex widget 需要本机可用的 `codex` CLI
+- **macOS 14+**
+- **Xcode 16+（通过App Store下载）**
+- **已登录 Xcode 的 Apple ID**
+
+可选（缺少项则无法获取）：
+
+- Codex widget 需要本机可用的 `codex` CLI，保持登录状态。
 - GLM widget 需要 `~/.glm_quota_config.json`
 
 GLM 配置文件示例：
