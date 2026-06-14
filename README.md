@@ -1,6 +1,6 @@
-# Code Quota Dial Widget
+# Code Quota Dial Widget（MacOS桌面组件）
 
-把 **Codex** 和 **GLM（智谱）** 的额度做成 macOS 桌面 Widget。
+把 **Codex** 和 **GLM（智谱）** 的额度做成 macOS 桌面组件。
 
 <p align="center">
   <img src="assets/example_all.png" alt="example" width="800" />
