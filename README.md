@@ -2,9 +2,13 @@
 
 把 **Codex** 和 **GLM（智谱）** 的额度做成 macOS 桌面 Widget。
 
-<img src="assets/example_all.png" alt="example" width="800" />
+<p align="center">
+  <img src="assets/example_all.png" alt="example" width="800" />
+</p>
 
-<img src="assets/example_desktop.png" alt="example" width="600" />
+<p align="center">
+  <img src="assets/example_desktop.png" alt="example" width="600" />
+</p>
 
 当前仓库的安装方式已经改成：
 
@@ -143,6 +147,8 @@ Runtime/glm/GLMQuotaSnapshotTool
 ~/Library/Group Containers/<TeamID>.group.local.glm-quota-monitor/glm_quota_snapshot.json
 ```
 
+通过双击桌面添加组件即可。
+
 ## 验证安装
 
 先看 LaunchAgent 是否已加载：
@@ -167,17 +173,6 @@ launchctl kickstart -k "gui/$(id -u)/local.glm-quota-dial.refresh"
 ```
 
 如果快照文件的修改时间前进，说明后台刷新链路正常。
-
-## 这次排查的结论
-
-这次“组件不更新”排查后，当前结论是：
-
-- 重装后的 App Group entitlement 正常
-- 两个 snapshot tool 可以正常写共享容器
-- LaunchAgent 已成功加载
-- 手动 `kickstart` 后两份快照的 `generatedAt` 会前进
-
-也就是说，当前命令流安装出来的版本，刷新链路是通的。
 
 ## 常见问题
 
