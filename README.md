@@ -2,7 +2,9 @@
 
 把 **Codex** 和 **GLM（智谱）** 的额度做成 macOS 桌面 Widget。
 
-<img src="assets/example.png" alt="example" style="zoom:50%;" />
+<img src="assets/example_all.png" alt="example" width="800" />
+
+<img src="assets/example_desktop.png" alt="example" width="600" />
 
 当前仓库的安装方式已经改成：
 
@@ -29,7 +31,7 @@ CodeQuotaDialWidget/
 ├── script/
 │   ├── install.command
 │   ├── rebuild-local.command
-│   └── clean-local.command
+│   └── uninstall.command
 ├── local-config.example.env
 ├── Sources/
 ├── Runtime/
@@ -219,20 +221,26 @@ launchctl kickstart -k "gui/$(id -u)/local.glm-quota-dial.refresh"
 
 ## 卸载
 
-当前仓库还没有单独的卸载脚本。  
-如果要手动清理，至少删除这些内容：
+执行：
 
 ```bash
-rm -rf /Applications/CodeQuotaDialXcode.app
-rm -f ~/Library/LaunchAgents/local.codex-quota-dial.refresh.plist
-rm -f ~/Library/LaunchAgents/local.glm-quota-dial.refresh.plist
-rm -rf ~/Library/Group\ Containers/*codex-token-monitor
-rm -rf ~/Library/Group\ Containers/*glm-quota-monitor
+./script/uninstall.command
 ```
 
-卸载前建议先：
+开发态全清可执行：
 
 ```bash
-launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/local.codex-quota-dial.refresh.plist
-launchctl bootout "gui/$(id -u)" ~/Library/LaunchAgents/local.glm-quota-dial.refresh.plist
+./script/uninstall.command --include-project-build
 ```
+
+它会清理：
+
+- `/Applications/CodeQuotaDialXcode.app`
+- `~/Library/LaunchAgents/local.codex-quota-dial.refresh.plist`
+- `~/Library/LaunchAgents/local.glm-quota-dial.refresh.plist`
+- `~/Library/Group Containers/*codex-token-monitor`
+- `~/Library/Group Containers/*glm-quota-monitor`
+- `Runtime/codex/CodexQuotaSnapshotTool`
+- `Runtime/glm/GLMQuotaSnapshotTool`
+- `Runtime/*/logs`
+- WidgetKit/Chrono 相关缓存

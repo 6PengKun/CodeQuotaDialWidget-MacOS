@@ -3,4 +3,5 @@ local-config.env
 .build/
 .swiftpm/
 Runtime/*/logs/
-
+Runtime/codex/CodexQuotaSnapshotTool
+Runtime/glm/GLMQuotaSnapshotTool

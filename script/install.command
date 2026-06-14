@@ -1,5 +1,6 @@
 #!/bin/zsh
 set -euo pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -21,4 +22,4 @@ else
   echo "==> Building and installing fresh app, tools, and launch agents"
 fi
 
-exec "$SCRIPT_DIR/rebuild-local.command"
+exec /bin/zsh "$SCRIPT_DIR/rebuild-local.command"
