@@ -2,6 +2,4 @@ local-config.env
 .DS_Store
 .build/
 .swiftpm/
-Runtime/*/logs/
-Runtime/codex/CodexQuotaSnapshotTool
-Runtime/glm/GLMQuotaSnapshotTool
+Runtime/
