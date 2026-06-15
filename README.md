@@ -1,6 +1,6 @@
 # Code Quota Dial Widget（MacOS桌面组件）
 
-把 **Codex** 和 **GLM（智谱）** 的额度做成 macOS 桌面组件。
+把 **Codex**、**Claude Code** 和 **GLM（智谱）** 的额度做成 macOS 桌面组件。
 
 <p align="center">
   <img src="assets/example_all.png" alt="example" width="800" />
@@ -46,7 +46,7 @@ CodeQuotaDialWidget/
 
 ```text
 LaunchAgent
-  -> CodexQuotaSnapshotTool / GLMQuotaSnapshotTool
+  -> CodexQuotaSnapshotTool / ClaudeQuotaSnapshotTool / GLMQuotaSnapshotTool
   -> 写入 App Group 共享容器里的 JSON 快照
   -> Widget 读取快照并刷新
 ```
@@ -65,6 +65,7 @@ LaunchAgent
 可选（缺少项则无法获取）：
 
 - Codex widget 需要本机可用的 `codex` CLI，保持登录状态。
+- Claude widget 需要本机 Claude Code 已登录，能从 Keychain 读取 `Claude Code-credentials`。
 - GLM widget 需要 `~/.glm_quota_config.json`
 
 GLM 配置文件示例：
@@ -87,7 +88,7 @@ cd CodeQuotaDialWidget
 1. 从本机开发身份探测 `Team ID`
 2. 生成 `local-config.env`
 3. 生成本机需要的 App Group 配置和 entitlements
-4. 构建 App、Widget、两个 snapshot tool
+4. 构建 App、Widget、三个 snapshot tool
 5. 用 `ad-hoc` 方式重签名
 6. 安装到 `/Applications/CodeQuotaDialXcode.app`
 7. 生成并加载两个 `LaunchAgent`
@@ -116,6 +117,7 @@ local-config.env
 
 - `TEAM_ID`
 - `CODEX_APP_GROUP`
+- `CLAUDE_APP_GROUP`
 - `GLM_APP_GROUP`
 - `INSTALL_BASE`
 - `REFRESH_INTERVAL`
@@ -135,8 +137,10 @@ local-config.env
 ```text
 /Applications/CodeQuotaDialXcode.app
 ~/Library/LaunchAgents/local.codex-quota-dial.refresh.plist
+~/Library/LaunchAgents/local.claude-quota-dial.refresh.plist
 ~/Library/LaunchAgents/local.glm-quota-dial.refresh.plist
 Runtime/codex/CodexQuotaSnapshotTool
+Runtime/claude/ClaudeQuotaSnapshotTool
 Runtime/glm/GLMQuotaSnapshotTool
 ```
 
@@ -144,6 +148,7 @@ Runtime/glm/GLMQuotaSnapshotTool
 
 ```text
 ~/Library/Group Containers/<TeamID>.group.local.codex-token-monitor/codex_quota_snapshot.json
+~/Library/Group Containers/<TeamID>.group.local.claude-quota-monitor/claude_quota_snapshot.json
 ~/Library/Group Containers/<TeamID>.group.local.glm-quota-monitor/glm_quota_snapshot.json
 ```
 
@@ -155,6 +160,7 @@ Runtime/glm/GLMQuotaSnapshotTool
 
 ```bash
 launchctl print "gui/$(id -u)/local.codex-quota-dial.refresh"
+launchctl print "gui/$(id -u)/local.claude-quota-dial.refresh"
 launchctl print "gui/$(id -u)/local.glm-quota-dial.refresh"
 ```
 
@@ -162,6 +168,7 @@ launchctl print "gui/$(id -u)/local.glm-quota-dial.refresh"
 
 ```bash
 ls ~/Library/Group\ Containers/*codex-token-monitor/codex_quota_snapshot.json
+ls ~/Library/Group\ Containers/*claude-quota-monitor/claude_quota_snapshot.json
 ls ~/Library/Group\ Containers/*glm-quota-monitor/glm_quota_snapshot.json
 ```
 
@@ -169,6 +176,7 @@ ls ~/Library/Group\ Containers/*glm-quota-monitor/glm_quota_snapshot.json
 
 ```bash
 launchctl kickstart -k "gui/$(id -u)/local.codex-quota-dial.refresh"
+launchctl kickstart -k "gui/$(id -u)/local.claude-quota-dial.refresh"
 launchctl kickstart -k "gui/$(id -u)/local.glm-quota-dial.refresh"
 ```
 
@@ -182,12 +190,14 @@ launchctl kickstart -k "gui/$(id -u)/local.glm-quota-dial.refresh"
 
 ```bash
 tail -n 100 Runtime/codex/logs/refresh.err.log
+tail -n 100 Runtime/claude/logs/refresh.err.log
 tail -n 100 Runtime/glm/logs/refresh.err.log
 ```
 
 常见原因：
 
 - `codex` CLI 不在 PATH 里
+- Claude Code 未登录，或 Keychain 中没有 `Claude Code-credentials`
 - `~/.glm_quota_config.json` 不存在
 - 代理没配好
 - `local-config.env` 里改坏了 App Group
@@ -198,6 +208,7 @@ tail -n 100 Runtime/glm/logs/refresh.err.log
 
 ```bash
 launchctl kickstart -k "gui/$(id -u)/local.codex-quota-dial.refresh"
+launchctl kickstart -k "gui/$(id -u)/local.claude-quota-dial.refresh"
 launchctl kickstart -k "gui/$(id -u)/local.glm-quota-dial.refresh"
 ```
 
@@ -232,10 +243,13 @@ launchctl kickstart -k "gui/$(id -u)/local.glm-quota-dial.refresh"
 
 - `/Applications/CodeQuotaDialXcode.app`
 - `~/Library/LaunchAgents/local.codex-quota-dial.refresh.plist`
+- `~/Library/LaunchAgents/local.claude-quota-dial.refresh.plist`
 - `~/Library/LaunchAgents/local.glm-quota-dial.refresh.plist`
 - `~/Library/Group Containers/*codex-token-monitor`
+- `~/Library/Group Containers/*claude-quota-monitor`
 - `~/Library/Group Containers/*glm-quota-monitor`
 - `Runtime/codex/CodexQuotaSnapshotTool`
+- `Runtime/claude/ClaudeQuotaSnapshotTool`
 - `Runtime/glm/GLMQuotaSnapshotTool`
 - `Runtime/*/logs`
 - WidgetKit/Chrono 相关缓存

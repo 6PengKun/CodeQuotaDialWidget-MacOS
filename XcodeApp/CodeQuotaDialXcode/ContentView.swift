@@ -35,6 +35,8 @@ struct ContentView: View {
                 switch selectedDashboard {
                 case .codex:
                     CodexQuotaPanelView()
+                case .claude:
+                    ClaudeQuotaPanelView()
                 case .glm:
                     GLMQuotaPanelView()
                 }
@@ -47,6 +49,7 @@ struct ContentView: View {
 
 private enum Dashboard: String, CaseIterable, Identifiable {
     case codex
+    case claude
     case glm
 
     var id: String { rawValue }
@@ -55,6 +58,8 @@ private enum Dashboard: String, CaseIterable, Identifiable {
         switch self {
         case .codex:
             return "Codex"
+        case .claude:
+            return "Claude"
         case .glm:
             return "GLM"
         }

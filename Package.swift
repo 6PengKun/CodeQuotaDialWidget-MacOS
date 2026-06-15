@@ -21,6 +21,18 @@ let package = Package(
             targets: ["CodexQuotaSnapshotTool"]
         ),
         .library(
+            name: "ClaudeQuotaCore",
+            targets: ["ClaudeQuotaCore"]
+        ),
+        .library(
+            name: "ClaudeQuotaDialWidget",
+            targets: ["ClaudeQuotaDialWidget"]
+        ),
+        .executable(
+            name: "ClaudeQuotaSnapshotTool",
+            targets: ["ClaudeQuotaSnapshotTool"]
+        ),
+        .library(
             name: "GLMQuotaCore",
             targets: ["GLMQuotaCore"]
         ),
@@ -48,6 +60,21 @@ let package = Package(
         .testTarget(
             name: "CodexQuotaCoreTests",
             dependencies: ["CodexQuotaCore"]
+        ),
+        .target(
+            name: "ClaudeQuotaCore"
+        ),
+        .target(
+            name: "ClaudeQuotaDialWidget",
+            dependencies: ["ClaudeQuotaCore"]
+        ),
+        .executableTarget(
+            name: "ClaudeQuotaSnapshotTool",
+            dependencies: ["ClaudeQuotaCore"]
+        ),
+        .testTarget(
+            name: "ClaudeQuotaCoreTests",
+            dependencies: ["ClaudeQuotaCore"]
         ),
         .target(
             name: "GLMQuotaCore"

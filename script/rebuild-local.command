@@ -15,13 +15,17 @@ BUILD_APP="$DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
 WIDGET_EXTENSION_NAME="CodeQuotaDialWidgetExtension.appex"
 RUNTIME_DIR="$PROJECT_ROOT/Runtime"
 CODEX_RUNTIME_DIR="$RUNTIME_DIR/codex"
+CLAUDE_RUNTIME_DIR="$RUNTIME_DIR/claude"
 GLM_RUNTIME_DIR="$RUNTIME_DIR/glm"
 CODEX_TOOL_RUNTIME="$CODEX_RUNTIME_DIR/CodexQuotaSnapshotTool"
+CLAUDE_TOOL_RUNTIME="$CLAUDE_RUNTIME_DIR/ClaudeQuotaSnapshotTool"
 GLM_TOOL_RUNTIME="$GLM_RUNTIME_DIR/GLMQuotaSnapshotTool"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 CODEX_LABEL="local.codex-quota-dial.refresh"
+CLAUDE_LABEL="local.claude-quota-dial.refresh"
 GLM_LABEL="local.glm-quota-dial.refresh"
 CODEX_PLIST="$LAUNCH_AGENTS_DIR/$CODEX_LABEL.plist"
+CLAUDE_PLIST="$LAUNCH_AGENTS_DIR/$CLAUDE_LABEL.plist"
 GLM_PLIST="$LAUNCH_AGENTS_DIR/$GLM_LABEL.plist"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister"
 USER_GUI_DOMAIN="gui/$(id -u)"
@@ -114,6 +118,14 @@ public enum GLMQuotaAppGroup {
     public static let identifier = "$GLM_APP_GROUP"
 }
 EOF
+
+  cat > "$PROJECT_ROOT/Sources/ClaudeQuotaCore/AppGroupConfig.generated.swift" <<EOF
+import Foundation
+
+public enum ClaudeQuotaAppGroup {
+    public static let identifier = "$CLAUDE_APP_GROUP"
+}
+EOF
 }
 
 write_entitlements() {
@@ -127,6 +139,7 @@ write_entitlements() {
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>$CODEX_APP_GROUP</string>
+		<string>$CLAUDE_APP_GROUP</string>
 		<string>$GLM_APP_GROUP</string>
 	</array>
 </dict>
@@ -143,6 +156,7 @@ EOF
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>$CODEX_APP_GROUP</string>
+		<string>$CLAUDE_APP_GROUP</string>
 		<string>$GLM_APP_GROUP</string>
 	</array>
 </dict>
@@ -157,6 +171,7 @@ EOF
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>$CODEX_APP_GROUP</string>
+		<string>$CLAUDE_APP_GROUP</string>
 		<string>$GLM_APP_GROUP</string>
 	</array>
 </dict>
@@ -248,6 +263,7 @@ require_config() {
   : "${TEAM_ID:?TEAM_ID is required}"
   : "${SIGNING_IDENTITY:?SIGNING_IDENTITY is required}"
   : "${CODEX_APP_GROUP:?CODEX_APP_GROUP is required}"
+  : "${CLAUDE_APP_GROUP:?CLAUDE_APP_GROUP is required}"
   : "${GLM_APP_GROUP:?GLM_APP_GROUP is required}"
   : "${INSTALL_BASE:?INSTALL_BASE is required}"
   : "${REFRESH_INTERVAL:?REFRESH_INTERVAL is required}"
@@ -279,15 +295,18 @@ build_snapshot_tools() {
   echo "==> Building snapshot tools"
   BIN_PATH="$(swift build --package-path "$PROJECT_ROOT" -c release --show-bin-path)"
   swift build --package-path "$PROJECT_ROOT" -c release --product CodexQuotaSnapshotTool
+  swift build --package-path "$PROJECT_ROOT" -c release --product ClaudeQuotaSnapshotTool
   swift build --package-path "$PROJECT_ROOT" -c release --product GLMQuotaSnapshotTool
 }
 
 install_snapshot_tools() {
   echo "==> Installing snapshot tools"
-  mkdir -p "$CODEX_RUNTIME_DIR/logs" "$GLM_RUNTIME_DIR/logs"
+  mkdir -p "$CODEX_RUNTIME_DIR/logs" "$CLAUDE_RUNTIME_DIR/logs" "$GLM_RUNTIME_DIR/logs"
   cp "$BIN_PATH/CodexQuotaSnapshotTool" "$CODEX_TOOL_RUNTIME"
+  cp "$BIN_PATH/ClaudeQuotaSnapshotTool" "$CLAUDE_TOOL_RUNTIME"
   cp "$BIN_PATH/GLMQuotaSnapshotTool" "$GLM_TOOL_RUNTIME"
   codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none --entitlements "$GENERATED_DIR/RuntimeTool.entitlements" "$CODEX_TOOL_RUNTIME"
+  codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none --entitlements "$GENERATED_DIR/RuntimeTool.entitlements" "$CLAUDE_TOOL_RUNTIME"
   codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none --entitlements "$GENERATED_DIR/RuntimeTool.entitlements" "$GLM_TOOL_RUNTIME"
 }
 
@@ -323,14 +342,17 @@ reload_launch_agent() {
 install_launch_agents() {
   echo "==> Installing launch agents"
   write_launch_agent "$CODEX_LABEL" "$CODEX_TOOL_RUNTIME" "$CODEX_PLIST"
+  write_launch_agent "$CLAUDE_LABEL" "$CLAUDE_TOOL_RUNTIME" "$CLAUDE_PLIST"
   write_launch_agent "$GLM_LABEL" "$GLM_TOOL_RUNTIME" "$GLM_PLIST"
   reload_launch_agent "$CODEX_PLIST"
+  reload_launch_agent "$CLAUDE_PLIST"
   reload_launch_agent "$GLM_PLIST"
 }
 
 prime_snapshots() {
   echo "==> Priming fresh snapshots"
   "$CODEX_TOOL_RUNTIME"
+  "$CLAUDE_TOOL_RUNTIME"
   "$GLM_TOOL_RUNTIME"
 }
 
@@ -352,12 +374,14 @@ print_summary() {
   echo "App:    $INSTALL_APP"
   echo "Build:  $BUILD_VERSION"
   echo "Codex:  $CODEX_TOOL_RUNTIME"
+  echo "Claude: $CLAUDE_TOOL_RUNTIME"
   echo "GLM:    $GLM_TOOL_RUNTIME"
 }
 
 main() {
   ensure_config
   source "$CONFIG_FILE"
+  : "${CLAUDE_APP_GROUP:="${TEAM_ID}.group.local.claude-quota-monitor"}"
   require_config
 
   INSTALL_APP="$INSTALL_BASE/$APP_NAME.app"

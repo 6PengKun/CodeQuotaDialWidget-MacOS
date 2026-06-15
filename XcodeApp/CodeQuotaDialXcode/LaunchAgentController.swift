@@ -145,6 +145,8 @@ enum LaunchctlError: LocalizedError {
 enum LaunchAgentLabels {
     static let codex = (label: "local.codex-quota-dial.refresh",
                         plist: "~/Library/LaunchAgents/local.codex-quota-dial.refresh.plist")
+    static let claude = (label: "local.claude-quota-dial.refresh",
+                         plist: "~/Library/LaunchAgents/local.claude-quota-dial.refresh.plist")
     static let glm = (label: "local.glm-quota-dial.refresh",
                       plist: "~/Library/LaunchAgents/local.glm-quota-dial.refresh.plist")
 }

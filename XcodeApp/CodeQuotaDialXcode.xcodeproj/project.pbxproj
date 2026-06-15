@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C1A0DE012FCFDAC800DCDC5F /* ClaudeQuotaDialWidget in Frameworks */ = {isa = PBXBuildFile; productRef = C1A0DE122FCFDAC800DCDC5F /* ClaudeQuotaDialWidget */; };
+		C1A0DE022FCFDAC800DCDC5F /* ClaudeQuotaCore in Frameworks */ = {isa = PBXBuildFile; productRef = C1A0DE112FCFDAC800DCDC5F /* ClaudeQuotaCore */; };
 		C0DE00012FCFDAC800DCDC5F /* GLMQuotaDialWidget in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE10022FCFDAC800DCDC5F /* GLMQuotaDialWidget */; };
 		C0DE00022FCFDAC800DCDC5F /* GLMQuotaCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE10012FCFDAC800DCDC5F /* GLMQuotaCore */; };
 		731C19542FCFDAC800DCDC5F /* CodexQuotaDialWidget in Frameworks */ = {isa = PBXBuildFile; productRef = 733BD9562FD00C1A004980CA /* CodexQuotaDialWidget */; };
@@ -79,6 +81,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C1A0DE022FCFDAC800DCDC5F /* ClaudeQuotaCore in Frameworks */,
 				C0DE00022FCFDAC800DCDC5F /* GLMQuotaCore in Frameworks */,
 				733BD9362FCFD3A3004980CA /* CodexQuotaCore in Frameworks */,
 			);
@@ -88,6 +91,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C1A0DE012FCFDAC800DCDC5F /* ClaudeQuotaDialWidget in Frameworks */,
 				C0DE00012FCFDAC800DCDC5F /* GLMQuotaDialWidget in Frameworks */,
 				731C19542FCFDAC800DCDC5F /* CodexQuotaDialWidget in Frameworks */,
 				733BD9402FCFD469004980CA /* SwiftUI.framework in Frameworks */,
@@ -150,6 +154,7 @@
 			name = CodeQuotaDialXcode;
 			packageProductDependencies = (
 				733BD9352FCFD3A3004980CA /* CodexQuotaCore */,
+				C1A0DE112FCFDAC800DCDC5F /* ClaudeQuotaCore */,
 				C0DE10012FCFDAC800DCDC5F /* GLMQuotaCore */,
 			);
 			productName = CodeQuotaDialXcode;
@@ -174,6 +179,7 @@
 			name = CodeQuotaDialWidgetExtension;
 			packageProductDependencies = (
 				733BD9562FD00C1A004980CA /* CodexQuotaDialWidget */,
+				C1A0DE122FCFDAC800DCDC5F /* ClaudeQuotaDialWidget */,
 				C0DE10022FCFDAC800DCDC5F /* GLMQuotaDialWidget */,
 			);
 			productName = CodeQuotaDialWidgetExtension;
@@ -590,6 +596,14 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		C1A0DE112FCFDAC800DCDC5F /* ClaudeQuotaCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ClaudeQuotaCore;
+		};
+		C1A0DE122FCFDAC800DCDC5F /* ClaudeQuotaDialWidget */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ClaudeQuotaDialWidget;
+		};
 		C0DE10012FCFDAC800DCDC5F /* GLMQuotaCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = GLMQuotaCore;

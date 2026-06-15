@@ -1,4 +1,5 @@
 import CodexQuotaDialWidget
+import ClaudeQuotaDialWidget
 import GLMQuotaDialWidget
 import SwiftUI
 import WidgetKit
@@ -7,6 +8,7 @@ import WidgetKit
 struct CodeQuotaDialWidgetBundle: WidgetBundle {
     var body: some Widget {
         CodexQuotaDialWidget()
+        ClaudeQuotaDialWidget()
         GLMQuotaDialWidget()
     }
 }
