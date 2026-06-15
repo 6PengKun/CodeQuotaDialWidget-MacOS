@@ -213,13 +213,6 @@ write_launch_agent() {
 		<string>$PATH_PREFIX:/usr/bin:/bin:/usr/sbin:/sbin</string>
 EOF
 
-  if [[ "$label" == "$CODEX_LABEL" ]]; then
-    cat >> "$plist_path" <<EOF
-		<key>CODEX_HOME</key>
-		<string>$CODEX_HOME</string>
-EOF
-  fi
-
   if [[ -n "${HTTP_PROXY:-}" ]]; then
     cat >> "$plist_path" <<EOF
 		<key>HTTP_PROXY</key>
@@ -267,7 +260,6 @@ require_config() {
   : "${GLM_APP_GROUP:?GLM_APP_GROUP is required}"
   : "${INSTALL_BASE:?INSTALL_BASE is required}"
   : "${REFRESH_INTERVAL:?REFRESH_INTERVAL is required}"
-  : "${CODEX_HOME:?CODEX_HOME is required}"
   : "${PATH_PREFIX:?PATH_PREFIX is required}"
 }
 

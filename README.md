@@ -64,7 +64,7 @@ LaunchAgent
 
 可选（缺少项则无法获取）：
 
-- Codex widget 需要本机可用的 `codex` CLI，保持登录状态。
+- Codex widget 需要本机 Codex 已使用 ChatGPT OAuth 登录，能从 Keychain 读取 `Codex Auth` 或读取 `~/.codex/auth.json`。
 - Claude widget 需要本机 Claude Code 已登录，能从 Keychain 读取 `Claude Code-credentials`。
 - GLM widget 需要 `~/.glm_quota_config.json`
 
@@ -121,7 +121,6 @@ local-config.env
 - `GLM_APP_GROUP`
 - `INSTALL_BASE`
 - `REFRESH_INTERVAL`
-- `CODEX_HOME`
 - `PATH_PREFIX`
 - `HTTP_PROXY`
 - `HTTPS_PROXY`
@@ -196,7 +195,7 @@ tail -n 100 Runtime/glm/logs/refresh.err.log
 
 常见原因：
 
-- `codex` CLI 不在 PATH 里
+- Codex 未使用 ChatGPT OAuth 登录，或 Keychain/`~/.codex/auth.json` 中没有可用凭据
 - Claude Code 未登录，或 Keychain 中没有 `Claude Code-credentials`
 - `~/.glm_quota_config.json` 不存在
 - 代理没配好

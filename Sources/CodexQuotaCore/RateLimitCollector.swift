@@ -1,16 +1,13 @@
 import Foundation
 
 public struct CodexQuotaCollector: Sendable {
-    private let paths: CodexPaths
-
-    public init(paths: CodexPaths = CodexPaths()) {
-        self.paths = paths
-    }
+    public init() {}
 
     public func collect(now: Date = Date()) -> CodexQuotaSnapshot {
         do {
-            let stdout = try readRateLimitsFromAppServer()
-            var snapshot = try Self.parseRateLimitsResponse(stdout)
+            let credentials = try Self.readCredentials()
+            let responseBody = try fetchQuota(credentials: credentials)
+            var snapshot = try Self.parseUsageResponse(responseBody)
             snapshot.generatedAt = now
             return snapshot
         } catch {
@@ -18,186 +15,227 @@ public struct CodexQuotaCollector: Sendable {
         }
     }
 
-    private func readRateLimitsFromAppServer() throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: paths.codexBinaryPath)
-        process.arguments = ["app-server", "--listen", "stdio://"]
+    static func readCredentials() throws -> CodexCredentials {
+        if let credentials = try readCredentialsFromKeychain() {
+            return credentials
+        }
+        return try readCredentialsFromFile()
+    }
 
-        let inputPipe = Pipe()
+    private static func readCredentialsFromKeychain() throws -> CodexCredentials? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        process.arguments = ["find-generic-password", "-s", "Codex Auth", "-w"]
+
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = Pipe()
+
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            return nil
+        }
+
+        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        guard !data.isEmpty else {
+            return nil
+        }
+        return try parseCredentialsData(data)
+    }
+
+    private static func readCredentialsFromFile() throws -> CodexCredentials {
+        let authURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("auth.json")
+
+        guard FileManager.default.fileExists(atPath: authURL.path) else {
+            throw CodexQuotaError.credentialsNotFound
+        }
+
+        let data = try Data(contentsOf: authURL)
+        return try parseCredentialsData(data)
+    }
+
+    static func parseCredentialsData(_ data: Data) throws -> CodexCredentials {
+        let auth = try JSONDecoder().decode(CodexAuth.self, from: data)
+        guard auth.authMode == "chatgpt" else {
+            throw CodexQuotaError.invalidCredentials("Codex is not using ChatGPT OAuth mode")
+        }
+        guard let accessToken = auth.tokens?.accessToken, !accessToken.isEmpty else {
+            throw CodexQuotaError.invalidCredentials("access_token is empty or missing")
+        }
+        return CodexCredentials(accessToken: accessToken, accountId: auth.tokens?.accountId)
+    }
+
+    private func fetchQuota(credentials: CodexCredentials) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+
+        var arguments = [
+            "-s", "-S",
+            "--max-time", "15",
+            "-w", "\n__HTTP_STATUS__:%{http_code}\n",
+            "https://chatgpt.com/backend-api/wham/usage",
+            "-H", "Authorization: Bearer \(credentials.accessToken)",
+            "-H", "User-Agent: codex-cli",
+            "-H", "Accept: application/json"
+        ]
+        if let accountId = credentials.accountId, !accountId.isEmpty {
+            arguments.append(contentsOf: ["-H", "ChatGPT-Account-Id: \(accountId)"])
+        }
+        process.arguments = arguments
+
         let outputPipe = Pipe()
         let errorPipe = Pipe()
-        process.standardInput = inputPipe
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
-        let outputBuffer = LockedBuffer()
-        let errorBuffer = LockedBuffer()
-        let initialized = DispatchSemaphore(value: 0)
-        let completed = DispatchSemaphore(value: 0)
+        try process.run()
+        process.waitUntilExit()
 
-        outputPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            let output = outputBuffer.appendAndString(data)
-            if output.contains(#""id":1"#), output.contains(#""result""#) {
-                initialized.signal()
-            }
-            if output.contains(#""id":2"#), output.contains(#""rateLimits""#) {
-                completed.signal()
-            }
+        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+
+        guard process.terminationStatus == 0 else {
+            let stderr = String(data: errorData, encoding: .utf8) ?? "unknown error"
+            throw CodexQuotaError.httpError("curl exited with status \(process.terminationStatus): \(stderr)")
         }
 
-        errorPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            errorBuffer.append(data)
+        let output = String(data: outputData, encoding: .utf8) ?? ""
+        if output.isEmpty {
+            throw CodexQuotaError.httpError("empty response from Codex API")
         }
-
-        do {
-            try process.run()
-        } catch {
-            throw CodexQuotaError.noResponse("Could not launch app-server: \(error.localizedDescription)")
-        }
-
-        func send(_ object: String) {
-            inputPipe.fileHandleForWriting.write(Data((object + "\n").utf8))
-        }
-
-        send(#"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"codex-quota-dial-widget","title":"Codex Quota Dial Widget","version":"0.1.0"},"capabilities":{"experimentalApi":true,"requestAttestation":false,"optOutNotificationMethods":[]}}}"#)
-
-        guard initialized.wait(timeout: .now() + .seconds(60)) == .success else {
-            close(process: process, inputPipe: inputPipe, outputPipe: outputPipe, errorPipe: errorPipe)
-            throw CodexQuotaError.noResponse(Self.errorMessage(from: errorBuffer.string(), fallback: "app-server initialize did not return within 60 seconds"))
-        }
-
-        send(#"{"method":"initialized"}"#)
-        send(#"{"id":2,"method":"account/rateLimits/read"}"#)
-
-        guard completed.wait(timeout: .now() + .seconds(60)) == .success else {
-            close(process: process, inputPipe: inputPipe, outputPipe: outputPipe, errorPipe: errorPipe)
-            throw CodexQuotaError.noResponse(Self.errorMessage(from: errorBuffer.string(), fallback: "account/rateLimits/read did not return within 60 seconds"))
-        }
-
-        close(process: process, inputPipe: inputPipe, outputPipe: outputPipe, errorPipe: errorPipe)
-        return outputBuffer.string()
+        return try Self.extractSuccessfulBody(output)
     }
 
-    public static func parseRateLimitsResponse(_ stdout: String) throws -> CodexQuotaSnapshot {
-        guard let data = stdout
-            .split(separator: "\n")
-            .compactMap({ line -> Data? in
-                line.contains(#""rateLimits""#) ? Data(line.utf8) : nil
-            })
-            .first else {
-            return CodexQuotaSnapshot(generatedAt: Date(), error: "rateLimits response not found")
+    public static func parseUsageResponse(_ body: String) throws -> CodexQuotaSnapshot {
+        guard let data = body.data(using: .utf8) else {
+            return CodexQuotaSnapshot(generatedAt: Date(), error: "invalid response encoding")
         }
 
-        let envelope = try JSONDecoder().decode(RateLimitEnvelope.self, from: data)
-        let keyedSnapshots = envelope.result.rateLimitsByLimitId.map { Array($0.values) } ?? []
-        let snapshots = keyedSnapshots + [envelope.result.rateLimits]
+        let envelope = try JSONDecoder().decode(CodexUsageEnvelope.self, from: data)
+        let windows = [
+            envelope.rateLimit?.primaryWindow,
+            envelope.rateLimit?.secondaryWindow
+        ].compactMap { $0?.window }
+
         var fiveHour: CodexQuotaWindow?
         var weekly: CodexQuotaWindow?
 
-        for snapshot in snapshots {
-            for window in [snapshot.primary, snapshot.secondary].compactMap({ $0 }) {
-                let normalized = CodexQuotaWindow(
-                    remainingPercent: max(0, min(100, 100 - window.usedPercent)),
-                    usedPercent: window.usedPercent,
-                    resetsAt: window.resetsAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
-                    windowDurationMins: window.windowDurationMins
-                )
-
-                if let duration = window.windowDurationMins, abs(duration - 300) <= 30 {
-                    fiveHour = normalized
-                } else if let duration = window.windowDurationMins, abs(duration - 10_080) <= 120 {
-                    weekly = normalized
-                }
+        for window in windows {
+            if let duration = window.windowDurationMins, abs(duration - 300) <= 30 {
+                fiveHour = window
+            } else if let duration = window.windowDurationMins, abs(duration - 10_080) <= 120 {
+                weekly = window
             }
         }
 
-        return CodexQuotaSnapshot(generatedAt: Date(), fiveHour: fiveHour, weekly: weekly)
+        let snapshot = CodexQuotaSnapshot(generatedAt: Date(), fiveHour: fiveHour, weekly: weekly)
+        guard snapshot.hasCompleteDisplayData else {
+            return CodexQuotaSnapshot(generatedAt: Date(), fiveHour: fiveHour, weekly: weekly, error: "quota windows not found")
+        }
+        return snapshot
     }
 
-    private func close(process: Process, inputPipe: Pipe, outputPipe: Pipe, errorPipe: Pipe) {
-        outputPipe.fileHandleForReading.readabilityHandler = nil
-        errorPipe.fileHandleForReading.readabilityHandler = nil
-        inputPipe.fileHandleForWriting.closeFile()
-        if process.isRunning {
-            process.terminate()
-        }
-    }
-
-    private static func errorMessage(from stderr: String, fallback: String) -> String {
-        let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return fallback
+    private static func extractSuccessfulBody(_ output: String) throws -> String {
+        guard let markerRange = output.range(of: "\n__HTTP_STATUS__:", options: .backwards) else {
+            return output
         }
 
-        if trimmed.contains("remote installed plugin bundle sync failed")
-            || trimmed.contains("failed to warm featured plugin ids cache")
-            || trimmed.contains("failed to refresh remote installed plugins cache")
-            || trimmed.contains("/backend-api/plugins/featured")
-            || trimmed.contains("/backend-api/ps/plugins/installed") {
-            return "Codex app-server 启动时同步远程插件失败，额度接口本次未及时返回"
-        }
+        let body = String(output[..<markerRange.lowerBound])
+        let status = output[markerRange.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return trimmed
+        guard status == "200" else {
+            throw CodexQuotaError.httpError("API error (HTTP \(status)): \(body)")
+        }
+        return body
     }
 }
 
-private final class LockedBuffer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var data = Data()
-
-    func append(_ newData: Data) {
-        lock.lock()
-        data.append(newData)
-        lock.unlock()
-    }
-
-    func appendAndString(_ newData: Data) -> String {
-        lock.lock()
-        data.append(newData)
-        let output = String(data: data, encoding: .utf8) ?? ""
-        lock.unlock()
-        return output
-    }
-
-    func string() -> String {
-        lock.lock()
-        let output = String(data: data, encoding: .utf8) ?? ""
-        lock.unlock()
-        return output
-    }
+struct CodexCredentials: Equatable, Sendable {
+    var accessToken: String
+    var accountId: String?
 }
 
 private enum CodexQuotaError: Error, LocalizedError {
-    case noResponse(String)
+    case credentialsNotFound
+    case invalidCredentials(String)
+    case httpError(String)
 
     var errorDescription: String? {
         switch self {
-        case .noResponse(let message):
+        case .credentialsNotFound:
+            return "Codex OAuth credentials not found"
+        case .invalidCredentials(let message):
+            return message
+        case .httpError(let message):
             return message
         }
     }
 }
 
-private struct RateLimitEnvelope: Decodable {
-    var result: RateLimitReadResult
+private struct CodexAuth: Decodable {
+    var authMode: String?
+    var tokens: CodexTokens?
+
+    enum CodingKeys: String, CodingKey {
+        case authMode = "auth_mode"
+        case tokens
+    }
 }
 
-private struct RateLimitReadResult: Decodable {
-    var rateLimits: RateLimitSnapshotPayload
-    var rateLimitsByLimitId: [String: RateLimitSnapshotPayload]?
+private struct CodexTokens: Decodable {
+    var accessToken: String?
+    var accountId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case accountId = "account_id"
+    }
 }
 
-private struct RateLimitSnapshotPayload: Decodable {
-    var primary: RateLimitWindowPayload?
-    var secondary: RateLimitWindowPayload?
+private struct CodexUsageEnvelope: Decodable {
+    var rateLimit: CodexRateLimit?
+
+    enum CodingKeys: String, CodingKey {
+        case rateLimit = "rate_limit"
+    }
 }
 
-private struct RateLimitWindowPayload: Decodable {
-    var usedPercent: Int
-    var resetsAt: Int?
-    var windowDurationMins: Int?
+private struct CodexRateLimit: Decodable {
+    var primaryWindow: CodexRateLimitWindow?
+    var secondaryWindow: CodexRateLimitWindow?
+
+    enum CodingKeys: String, CodingKey {
+        case primaryWindow = "primary_window"
+        case secondaryWindow = "secondary_window"
+    }
+}
+
+private struct CodexRateLimitWindow: Decodable {
+    var usedPercent: Double?
+    var limitWindowSeconds: Int?
+    var resetAt: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case usedPercent = "used_percent"
+        case limitWindowSeconds = "limit_window_seconds"
+        case resetAt = "reset_at"
+    }
+
+    var window: CodexQuotaWindow? {
+        guard let usedPercent else {
+            return nil
+        }
+        let used = max(0, min(100, Int(usedPercent.rounded())))
+        let windowDurationMins = limitWindowSeconds.map { $0 / 60 }
+        return CodexQuotaWindow(
+            remainingPercent: max(0, min(100, 100 - used)),
+            usedPercent: used,
+            resetsAt: resetAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+            windowDurationMins: windowDurationMins
+        )
+    }
 }
