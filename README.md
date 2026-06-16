@@ -52,7 +52,7 @@ LaunchAgent
 ```
 
 宿主 App 负责注册 Widget Extension。  
-两个 snapshot tool 负责定时抓额度，并调用 `WidgetCenter.shared.reloadAllTimelines()`。
+三个 snapshot tool 负责定时抓额度，并调用 `WidgetCenter.shared.reloadAllTimelines()`。
 
 ## 前提条件
 
@@ -91,7 +91,7 @@ cd CodeQuotaDialWidget
 4. 构建 App、Widget、三个 snapshot tool
 5. 用 `ad-hoc` 方式重签名
 6. 安装到 `/Applications/CodeQuotaDialXcode.app`
-7. 生成并加载两个 `LaunchAgent`
+7. 生成并加载三个 `LaunchAgent`
 
 之后再次更新只需要重新执行：
 
