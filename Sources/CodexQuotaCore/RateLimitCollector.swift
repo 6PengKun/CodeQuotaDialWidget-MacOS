@@ -82,6 +82,9 @@ public struct CodexQuotaCollector: Sendable {
             "-H", "User-Agent: codex-cli",
             "-H", "Accept: application/json"
         ]
+        if let proxy = CodexQuotaProxyConfig.proxyURL, !proxy.isEmpty {
+            arguments.append(contentsOf: ["--proxy", proxy])
+        }
         if let accountId = credentials.accountId, !accountId.isEmpty {
             arguments.append(contentsOf: ["-H", "ChatGPT-Account-Id: \(accountId)"])
         }

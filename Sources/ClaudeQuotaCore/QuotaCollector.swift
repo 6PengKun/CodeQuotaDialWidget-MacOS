@@ -17,10 +17,10 @@ public struct ClaudeQuotaCollector: Sendable {
     }
 
     static func readCredentials() throws -> ClaudeOAuthCredentials {
-        if let credentials = try readCredentialsFromKeychain() {
-            return credentials
+        guard let credentials = try readCredentialsFromKeychain() else {
+            throw ClaudeQuotaError.credentialsNotFound
         }
-        return try readCredentialsFromFile()
+        return credentials
     }
 
     private static func readCredentialsFromKeychain() throws -> ClaudeOAuthCredentials? {
@@ -46,19 +46,6 @@ public struct ClaudeQuotaCollector: Sendable {
         return try parseCredentialsData(data)
     }
 
-    private static func readCredentialsFromFile() throws -> ClaudeOAuthCredentials {
-        let credentialsURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude", isDirectory: true)
-            .appendingPathComponent(".credentials.json")
-
-        guard FileManager.default.fileExists(atPath: credentialsURL.path) else {
-            throw ClaudeQuotaError.credentialsNotFound
-        }
-
-        let data = try Data(contentsOf: credentialsURL)
-        return try parseCredentialsData(data)
-    }
-
     static func parseCredentialsData(_ data: Data, now: Date = Date()) throws -> ClaudeOAuthCredentials {
         let credentials = try JSONDecoder().decode(ClaudeCredentials.self, from: data)
         guard let entry = credentials.claudeAiOauth ?? credentials.claudeDotAiOauth else {
@@ -76,14 +63,19 @@ public struct ClaudeQuotaCollector: Sendable {
     private func fetchQuota(accessToken: String) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        process.arguments = [
+        var arguments = [
             "-s", "-S",
             "--max-time", "15",
+            "-w", "\n__HTTP_STATUS__:%{http_code}\n",
             "https://api.anthropic.com/api/oauth/usage",
             "-H", "Authorization: Bearer \(accessToken)",
             "-H", "anthropic-beta: oauth-2025-04-20",
             "-H", "Accept: application/json"
         ]
+        if let proxy = ClaudeQuotaProxyConfig.proxyURL, !proxy.isEmpty {
+            arguments.append(contentsOf: ["--proxy", proxy])
+        }
+        process.arguments = arguments
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
@@ -105,7 +97,21 @@ public struct ClaudeQuotaCollector: Sendable {
         if output.isEmpty {
             throw ClaudeQuotaError.httpError("empty response from Claude API")
         }
-        return output
+        return try Self.extractSuccessfulBody(output)
+    }
+
+    private static func extractSuccessfulBody(_ output: String) throws -> String {
+        guard let markerRange = output.range(of: "\n__HTTP_STATUS__:", options: .backwards) else {
+            return output
+        }
+
+        let body = String(output[..<markerRange.lowerBound])
+        let status = output[markerRange.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard status == "200" else {
+            throw ClaudeQuotaError.httpError("API error (HTTP \(status)): \(body)")
+        }
+        return body
     }
 
     public static func parseResponse(_ body: String) throws -> ClaudeQuotaSnapshot {

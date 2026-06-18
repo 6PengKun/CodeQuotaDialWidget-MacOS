@@ -19,7 +19,7 @@ public struct GLMQuotaCollector: Sendable {
     private func fetchQuota(apiKey: String) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        process.arguments = [
+        var arguments = [
             "-s", "-S",
             "--max-time", "30",
             "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
@@ -27,6 +27,10 @@ public struct GLMQuotaCollector: Sendable {
             "-H", "Accept-Language: en-US,en",
             "-H", "Content-Type: application/json"
         ]
+        if let proxy = GLMQuotaProxyConfig.proxyURL, !proxy.isEmpty {
+            arguments.append(contentsOf: ["--proxy", proxy])
+        }
+        process.arguments = arguments
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()

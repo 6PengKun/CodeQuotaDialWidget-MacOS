@@ -102,12 +102,36 @@ ensure_config() {
   echo "Created $CONFIG_FILE"
 }
 
+swift_proxy_literal() {
+  # The GUI app does not inherit the shell's proxy environment the way the
+  # launch agents do, so bake a single proxy URL into the generated config and
+  # pass it to curl via --proxy. Prefer HTTPS_PROXY: every quota endpoint is
+  # https, and that is the variable curl itself honours for the launch agents,
+  # so the app uses the exact same (CONNECT-tunnel) path that already works.
+  # Fall back to HTTP_PROXY, then ALL_PROXY. Empty config means a direct call.
+  local proxy="${HTTPS_PROXY:-${HTTP_PROXY:-${ALL_PROXY:-}}}"
+  if [[ -n "$proxy" ]]; then
+    local escaped="${proxy//\\/\\\\}"
+    escaped="${escaped//\"/\\\"}"
+    printf '"%s"' "$escaped"
+  else
+    printf 'nil'
+  fi
+}
+
 write_coded_sources() {
+  local proxy_literal
+  proxy_literal="$(swift_proxy_literal)"
+
   cat > "$PROJECT_ROOT/Sources/CodexQuotaCore/AppGroupConfig.generated.swift" <<EOF
 import Foundation
 
 public enum CodexQuotaAppGroup {
     public static let identifier = "$CODEX_APP_GROUP"
+}
+
+public enum CodexQuotaProxyConfig {
+    public static let proxyURL: String? = $proxy_literal
 }
 EOF
 
@@ -117,6 +141,10 @@ import Foundation
 public enum GLMQuotaAppGroup {
     public static let identifier = "$GLM_APP_GROUP"
 }
+
+public enum GLMQuotaProxyConfig {
+    public static let proxyURL: String? = $proxy_literal
+}
 EOF
 
   cat > "$PROJECT_ROOT/Sources/ClaudeQuotaCore/AppGroupConfig.generated.swift" <<EOF
@@ -124,6 +152,10 @@ import Foundation
 
 public enum ClaudeQuotaAppGroup {
     public static let identifier = "$CLAUDE_APP_GROUP"
+}
+
+public enum ClaudeQuotaProxyConfig {
+    public static let proxyURL: String? = $proxy_literal
 }
 EOF
 }
