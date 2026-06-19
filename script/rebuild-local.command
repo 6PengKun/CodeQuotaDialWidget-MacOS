@@ -17,16 +17,20 @@ RUNTIME_DIR="$PROJECT_ROOT/Runtime"
 CODEX_RUNTIME_DIR="$RUNTIME_DIR/codex"
 CLAUDE_RUNTIME_DIR="$RUNTIME_DIR/claude"
 GLM_RUNTIME_DIR="$RUNTIME_DIR/glm"
+ANTIGRAVITY_RUNTIME_DIR="$RUNTIME_DIR/antigravity"
 CODEX_TOOL_RUNTIME="$CODEX_RUNTIME_DIR/CodexQuotaSnapshotTool"
 CLAUDE_TOOL_RUNTIME="$CLAUDE_RUNTIME_DIR/ClaudeQuotaSnapshotTool"
 GLM_TOOL_RUNTIME="$GLM_RUNTIME_DIR/GLMQuotaSnapshotTool"
+ANTIGRAVITY_TOOL_RUNTIME="$ANTIGRAVITY_RUNTIME_DIR/AntigravityQuotaSnapshotTool"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 CODEX_LABEL="local.codex-quota-dial.refresh"
 CLAUDE_LABEL="local.claude-quota-dial.refresh"
 GLM_LABEL="local.glm-quota-dial.refresh"
+ANTIGRAVITY_LABEL="local.antigravity-quota-dial.refresh"
 CODEX_PLIST="$LAUNCH_AGENTS_DIR/$CODEX_LABEL.plist"
 CLAUDE_PLIST="$LAUNCH_AGENTS_DIR/$CLAUDE_LABEL.plist"
 GLM_PLIST="$LAUNCH_AGENTS_DIR/$GLM_LABEL.plist"
+ANTIGRAVITY_PLIST="$LAUNCH_AGENTS_DIR/$ANTIGRAVITY_LABEL.plist"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister"
 USER_GUI_DOMAIN="gui/$(id -u)"
 BUILD_VERSION="$(date +%Y%m%d%H%M%S)"
@@ -158,6 +162,14 @@ public enum ClaudeQuotaProxyConfig {
     public static let proxyURL: String? = $proxy_literal
 }
 EOF
+
+  cat > "$PROJECT_ROOT/Sources/AntigravityQuotaCore/AppGroupConfig.generated.swift" <<EOF
+import Foundation
+
+public enum AntigravityQuotaAppGroup {
+    public static let identifier = "$ANTIGRAVITY_APP_GROUP"
+}
+EOF
 }
 
 write_entitlements() {
@@ -173,6 +185,7 @@ write_entitlements() {
 		<string>$CODEX_APP_GROUP</string>
 		<string>$CLAUDE_APP_GROUP</string>
 		<string>$GLM_APP_GROUP</string>
+		<string>$ANTIGRAVITY_APP_GROUP</string>
 	</array>
 </dict>
 </plist>
@@ -190,6 +203,7 @@ EOF
 		<string>$CODEX_APP_GROUP</string>
 		<string>$CLAUDE_APP_GROUP</string>
 		<string>$GLM_APP_GROUP</string>
+		<string>$ANTIGRAVITY_APP_GROUP</string>
 	</array>
 </dict>
 </plist>
@@ -205,6 +219,7 @@ EOF
 		<string>$CODEX_APP_GROUP</string>
 		<string>$CLAUDE_APP_GROUP</string>
 		<string>$GLM_APP_GROUP</string>
+		<string>$ANTIGRAVITY_APP_GROUP</string>
 	</array>
 </dict>
 </plist>
@@ -290,6 +305,7 @@ require_config() {
   : "${CODEX_APP_GROUP:?CODEX_APP_GROUP is required}"
   : "${CLAUDE_APP_GROUP:?CLAUDE_APP_GROUP is required}"
   : "${GLM_APP_GROUP:?GLM_APP_GROUP is required}"
+  : "${ANTIGRAVITY_APP_GROUP:?ANTIGRAVITY_APP_GROUP is required}"
   : "${INSTALL_BASE:?INSTALL_BASE is required}"
   : "${REFRESH_INTERVAL:?REFRESH_INTERVAL is required}"
   : "${PATH_PREFIX:?PATH_PREFIX is required}"
@@ -325,23 +341,25 @@ build_app() {
 }
 
 build_snapshot_tools() {
-  clear_build_cache
   echo "==> Building snapshot tools"
   BIN_PATH="$(swift build --package-path "$PROJECT_ROOT" -c release --show-bin-path)"
   swift build --package-path "$PROJECT_ROOT" -c release --product CodexQuotaSnapshotTool
   swift build --package-path "$PROJECT_ROOT" -c release --product ClaudeQuotaSnapshotTool
   swift build --package-path "$PROJECT_ROOT" -c release --product GLMQuotaSnapshotTool
+  swift build --package-path "$PROJECT_ROOT" -c release --product AntigravityQuotaSnapshotTool
 }
 
 install_snapshot_tools() {
   echo "==> Installing snapshot tools"
-  mkdir -p "$CODEX_RUNTIME_DIR/logs" "$CLAUDE_RUNTIME_DIR/logs" "$GLM_RUNTIME_DIR/logs"
+  mkdir -p "$CODEX_RUNTIME_DIR/logs" "$CLAUDE_RUNTIME_DIR/logs" "$GLM_RUNTIME_DIR/logs" "$ANTIGRAVITY_RUNTIME_DIR/logs"
   cp "$BIN_PATH/CodexQuotaSnapshotTool" "$CODEX_TOOL_RUNTIME"
   cp "$BIN_PATH/ClaudeQuotaSnapshotTool" "$CLAUDE_TOOL_RUNTIME"
   cp "$BIN_PATH/GLMQuotaSnapshotTool" "$GLM_TOOL_RUNTIME"
+  cp "$BIN_PATH/AntigravityQuotaSnapshotTool" "$ANTIGRAVITY_TOOL_RUNTIME"
   codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none --entitlements "$GENERATED_DIR/RuntimeTool.entitlements" "$CODEX_TOOL_RUNTIME"
   codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none --entitlements "$GENERATED_DIR/RuntimeTool.entitlements" "$CLAUDE_TOOL_RUNTIME"
   codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none --entitlements "$GENERATED_DIR/RuntimeTool.entitlements" "$GLM_TOOL_RUNTIME"
+  codesign --force --sign "$SIGNING_IDENTITY" --timestamp=none --entitlements "$GENERATED_DIR/RuntimeTool.entitlements" "$ANTIGRAVITY_TOOL_RUNTIME"
 }
 
 install_app() {
@@ -378,9 +396,11 @@ install_launch_agents() {
   write_launch_agent "$CODEX_LABEL" "$CODEX_TOOL_RUNTIME" "$CODEX_PLIST"
   write_launch_agent "$CLAUDE_LABEL" "$CLAUDE_TOOL_RUNTIME" "$CLAUDE_PLIST"
   write_launch_agent "$GLM_LABEL" "$GLM_TOOL_RUNTIME" "$GLM_PLIST"
+  write_launch_agent "$ANTIGRAVITY_LABEL" "$ANTIGRAVITY_TOOL_RUNTIME" "$ANTIGRAVITY_PLIST"
   reload_launch_agent "$CODEX_PLIST"
   reload_launch_agent "$CLAUDE_PLIST"
   reload_launch_agent "$GLM_PLIST"
+  reload_launch_agent "$ANTIGRAVITY_PLIST"
 }
 
 prime_snapshots() {
@@ -388,6 +408,7 @@ prime_snapshots() {
   "$CODEX_TOOL_RUNTIME"
   "$CLAUDE_TOOL_RUNTIME"
   "$GLM_TOOL_RUNTIME"
+  "$ANTIGRAVITY_TOOL_RUNTIME"
 }
 
 refresh_app_registration() {
@@ -410,16 +431,19 @@ print_summary() {
   echo "Codex:  $CODEX_TOOL_RUNTIME"
   echo "Claude: $CLAUDE_TOOL_RUNTIME"
   echo "GLM:    $GLM_TOOL_RUNTIME"
+  echo "Antigravity: $ANTIGRAVITY_TOOL_RUNTIME"
 }
 
 main() {
   ensure_config
   source "$CONFIG_FILE"
   : "${CLAUDE_APP_GROUP:="${TEAM_ID}.group.local.claude-quota-monitor"}"
+  : "${ANTIGRAVITY_APP_GROUP:="${TEAM_ID}.group.local.antigravity-quota-monitor"}"
   require_config
 
   INSTALL_APP="$INSTALL_BASE/$APP_NAME.app"
 
+  clear_build_cache
   write_machine_specific_config
   build_app
   build_snapshot_tools

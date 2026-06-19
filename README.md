@@ -1,6 +1,6 @@
 # Code Quota Dial Widget
 
-> 将 **Codex**、**Claude Code** 和 **GLM（智谱）** 的额度做成 macOS 桌面组件，随时一眼掌握用量。
+> 将 **Codex**、**Claude Code**、**GLM（智谱）** 和 **Antigravity** 的额度做成 macOS 桌面组件，随时一眼掌握用量。
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="platform" />
@@ -36,11 +36,11 @@
 
 ## 功能特性
 
-- 📊 在 macOS 桌面以表盘组件实时展示 Codex / Claude Code / GLM 三家额度。
+- 📊 在 macOS 桌面以表盘组件实时展示 Codex / Claude Code / GLM / Antigravity 额度。
 - ⚙️ 机器相关配置全部外置到 `local-config.env`，无需手改 Swift、entitlements 或 `pbxproj`。
 - 🔁 通过 `LaunchAgent` 定时抓取额度并自动刷新组件。
 - 🚀 一条命令完成构建、重签名、安装：`script/install.command`。
-- 🧩 三个组件相互独立，缺少某项凭据时只影响对应组件，不影响其它。
+- 🧩 四个组件相互独立，缺少某项凭据或本地服务时只影响对应组件，不影响其它。
 
 ## 适用范围
 
@@ -69,6 +69,7 @@
 - **Codex 组件**：本机 Codex 已使用 ChatGPT OAuth 登录，可从 Keychain 读取 `Codex Auth`，或读取 `~/.codex/auth.json`。
 - **Claude 组件**：本机 Claude Code 已登录，可从 Keychain 读取 `Claude Code-credentials`。
 - **GLM 组件**：存在 `~/.glm_quota_config.json` 配置文件。
+- **Antigravity 组件**：本机 Antigravity 已登录并正在运行；当前版本只通过本地 Antigravity language server 获取额度，不做 Google OAuth 云端兜底。
 
 GLM 配置文件示例：
 
@@ -109,7 +110,7 @@ cd CodeQuotaDialWidget
 
 ```text
 LaunchAgent
-  -> CodexQuotaSnapshotTool / ClaudeQuotaSnapshotTool / GLMQuotaSnapshotTool
+  -> CodexQuotaSnapshotTool / ClaudeQuotaSnapshotTool / GLMQuotaSnapshotTool / AntigravityQuotaSnapshotTool
   -> 写入 App Group 共享容器中的 JSON 快照
   -> Widget 读取快照并刷新
 ```
@@ -142,6 +143,7 @@ CodeQuotaDialWidget/
 | `CODEX_APP_GROUP` | Codex 组件 App Group |
 | `CLAUDE_APP_GROUP` | Claude 组件 App Group |
 | `GLM_APP_GROUP` | GLM 组件 App Group |
+| `ANTIGRAVITY_APP_GROUP` | Antigravity 组件 App Group |
 | `INSTALL_BASE` | 安装目录 |
 | `REFRESH_INTERVAL` | 刷新间隔 |
 | `PATH_PREFIX` | 可执行文件路径前缀 |
@@ -158,9 +160,11 @@ CodeQuotaDialWidget/
 ~/Library/LaunchAgents/local.codex-quota-dial.refresh.plist
 ~/Library/LaunchAgents/local.claude-quota-dial.refresh.plist
 ~/Library/LaunchAgents/local.glm-quota-dial.refresh.plist
+~/Library/LaunchAgents/local.antigravity-quota-dial.refresh.plist
 Runtime/codex/CodexQuotaSnapshotTool
 Runtime/claude/ClaudeQuotaSnapshotTool
 Runtime/glm/GLMQuotaSnapshotTool
+Runtime/antigravity/AntigravityQuotaSnapshotTool
 ```
 
 共享容器中的快照路径：
@@ -169,6 +173,7 @@ Runtime/glm/GLMQuotaSnapshotTool
 ~/Library/Group Containers/<TeamID>.group.local.codex-token-monitor/codex_quota_snapshot.json
 ~/Library/Group Containers/<TeamID>.group.local.claude-quota-monitor/claude_quota_snapshot.json
 ~/Library/Group Containers/<TeamID>.group.local.glm-quota-monitor/glm_quota_snapshot.json
+~/Library/Group Containers/<TeamID>.group.local.antigravity-quota-monitor/antigravity_quota_snapshot.json
 ```
 
 ## 验证安装
@@ -179,6 +184,7 @@ Runtime/glm/GLMQuotaSnapshotTool
 launchctl print "gui/$(id -u)/local.codex-quota-dial.refresh"
 launchctl print "gui/$(id -u)/local.claude-quota-dial.refresh"
 launchctl print "gui/$(id -u)/local.glm-quota-dial.refresh"
+launchctl print "gui/$(id -u)/local.antigravity-quota-dial.refresh"
 ```
 
 **2. 确认快照文件已存在：**
@@ -187,6 +193,7 @@ launchctl print "gui/$(id -u)/local.glm-quota-dial.refresh"
 ls ~/Library/Group\ Containers/*codex-token-monitor/codex_quota_snapshot.json
 ls ~/Library/Group\ Containers/*claude-quota-monitor/claude_quota_snapshot.json
 ls ~/Library/Group\ Containers/*glm-quota-monitor/glm_quota_snapshot.json
+ls ~/Library/Group\ Containers/*antigravity-quota-monitor/antigravity_quota_snapshot.json
 ```
 
 **3. 手动触发一次刷新：**
@@ -195,6 +202,7 @@ ls ~/Library/Group\ Containers/*glm-quota-monitor/glm_quota_snapshot.json
 launchctl kickstart -k "gui/$(id -u)/local.codex-quota-dial.refresh"
 launchctl kickstart -k "gui/$(id -u)/local.claude-quota-dial.refresh"
 launchctl kickstart -k "gui/$(id -u)/local.glm-quota-dial.refresh"
+launchctl kickstart -k "gui/$(id -u)/local.antigravity-quota-dial.refresh"
 ```
 
 > 若快照文件的修改时间随之前进，说明后台刷新链路正常。
@@ -209,6 +217,7 @@ launchctl kickstart -k "gui/$(id -u)/local.glm-quota-dial.refresh"
 tail -n 100 Runtime/codex/logs/refresh.err.log
 tail -n 100 Runtime/claude/logs/refresh.err.log
 tail -n 100 Runtime/glm/logs/refresh.err.log
+tail -n 100 Runtime/antigravity/logs/refresh.err.log
 ```
 
 常见原因：
@@ -216,6 +225,7 @@ tail -n 100 Runtime/glm/logs/refresh.err.log
 - Codex 未使用 ChatGPT OAuth 登录，或 Keychain / `~/.codex/auth.json` 中没有可用凭据。
 - Claude Code 未登录，或 Keychain 中没有 `Claude Code-credentials`。
 - `~/.glm_quota_config.json` 不存在。
+- Antigravity 未运行，或本地 language server 没有暴露可用的 Connect RPC。
 - 代理未配置正确。
 - `local-config.env` 中的 App Group 被改坏。
 

@@ -43,6 +43,18 @@ let package = Package(
         .executable(
             name: "GLMQuotaSnapshotTool",
             targets: ["GLMQuotaSnapshotTool"]
+        ),
+        .library(
+            name: "AntigravityQuotaCore",
+            targets: ["AntigravityQuotaCore"]
+        ),
+        .library(
+            name: "AntigravityQuotaDialWidget",
+            targets: ["AntigravityQuotaDialWidget"]
+        ),
+        .executable(
+            name: "AntigravityQuotaSnapshotTool",
+            targets: ["AntigravityQuotaSnapshotTool"]
         )
     ],
     targets: [
@@ -90,6 +102,21 @@ let package = Package(
         .testTarget(
             name: "GLMQuotaCoreTests",
             dependencies: ["GLMQuotaCore"]
+        ),
+        .target(
+            name: "AntigravityQuotaCore"
+        ),
+        .target(
+            name: "AntigravityQuotaDialWidget",
+            dependencies: ["AntigravityQuotaCore"]
+        ),
+        .executableTarget(
+            name: "AntigravityQuotaSnapshotTool",
+            dependencies: ["AntigravityQuotaCore"]
+        ),
+        .testTarget(
+            name: "AntigravityQuotaCoreTests",
+            dependencies: ["AntigravityQuotaCore"]
         )
     ]
 )

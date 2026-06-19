@@ -39,6 +39,8 @@ struct ContentView: View {
                     ClaudeQuotaPanelView()
                 case .glm:
                     GLMQuotaPanelView()
+                case .antigravity:
+                    AntigravityQuotaPanelView()
                 }
             }
         }
@@ -51,6 +53,7 @@ private enum Dashboard: String, CaseIterable, Identifiable {
     case codex
     case claude
     case glm
+    case antigravity
 
     var id: String { rawValue }
 
@@ -62,6 +65,8 @@ private enum Dashboard: String, CaseIterable, Identifiable {
             return "Claude"
         case .glm:
             return "GLM"
+        case .antigravity:
+            return "Antigravity"
         }
     }
 }

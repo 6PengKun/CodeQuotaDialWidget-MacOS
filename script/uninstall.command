@@ -13,9 +13,11 @@ LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 CODEX_LABEL="local.codex-quota-dial.refresh"
 CLAUDE_LABEL="local.claude-quota-dial.refresh"
 GLM_LABEL="local.glm-quota-dial.refresh"
+ANTIGRAVITY_LABEL="local.antigravity-quota-dial.refresh"
 CODEX_PLIST="$LAUNCH_AGENTS_DIR/$CODEX_LABEL.plist"
 CLAUDE_PLIST="$LAUNCH_AGENTS_DIR/$CLAUDE_LABEL.plist"
 GLM_PLIST="$LAUNCH_AGENTS_DIR/$GLM_LABEL.plist"
+ANTIGRAVITY_PLIST="$LAUNCH_AGENTS_DIR/$ANTIGRAVITY_LABEL.plist"
 USER_GUI_DOMAIN="gui/$(id -u)"
 GROUP_CONTAINERS_DIR="$HOME/Library/Group Containers"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister"
@@ -108,14 +110,19 @@ remove_group_containers() {
     group_paths+=("$GROUP_CONTAINERS_DIR/$GLM_APP_GROUP")
   fi
 
+  if [[ -n "${ANTIGRAVITY_APP_GROUP:-}" ]]; then
+    group_paths+=("$GROUP_CONTAINERS_DIR/$ANTIGRAVITY_APP_GROUP")
+  fi
+
   group_paths+=(
     "$GROUP_CONTAINERS_DIR/group.local.codex-token-monitor"
     "$GROUP_CONTAINERS_DIR/group.local.claude-quota-monitor"
     "$GROUP_CONTAINERS_DIR/group.local.glm-quota-monitor"
+    "$GROUP_CONTAINERS_DIR/group.local.antigravity-quota-monitor"
   )
 
   local group_path
-  for group_path in "$GROUP_CONTAINERS_DIR"/*codex-token-monitor(N) "$GROUP_CONTAINERS_DIR"/*claude-quota-monitor(N) "$GROUP_CONTAINERS_DIR"/*glm-quota-monitor(N); do
+  for group_path in "$GROUP_CONTAINERS_DIR"/*codex-token-monitor(N) "$GROUP_CONTAINERS_DIR"/*claude-quota-monitor(N) "$GROUP_CONTAINERS_DIR"/*glm-quota-monitor(N) "$GROUP_CONTAINERS_DIR"/*antigravity-quota-monitor(N); do
     group_paths+=("$group_path")
   done
 
@@ -135,13 +142,16 @@ remove_runtime_outputs() {
   remove_path "$PROJECT_ROOT/Runtime/claude/logs"
   remove_path "$PROJECT_ROOT/Runtime/glm/GLMQuotaSnapshotTool"
   remove_path "$PROJECT_ROOT/Runtime/glm/logs"
-  rmdir "$PROJECT_ROOT/Runtime/codex" "$PROJECT_ROOT/Runtime/claude" "$PROJECT_ROOT/Runtime/glm" "$PROJECT_ROOT/Runtime" >/dev/null 2>&1 || true
+  remove_path "$PROJECT_ROOT/Runtime/antigravity/AntigravityQuotaSnapshotTool"
+  remove_path "$PROJECT_ROOT/Runtime/antigravity/logs"
+  rmdir "$PROJECT_ROOT/Runtime/codex" "$PROJECT_ROOT/Runtime/claude" "$PROJECT_ROOT/Runtime/glm" "$PROJECT_ROOT/Runtime/antigravity" "$PROJECT_ROOT/Runtime" >/dev/null 2>&1 || true
 }
 
 echo "==> Unloading launch agents"
 unload_launch_agent "$CODEX_LABEL" "$CODEX_PLIST"
 unload_launch_agent "$CLAUDE_LABEL" "$CLAUDE_PLIST"
 unload_launch_agent "$GLM_LABEL" "$GLM_PLIST"
+unload_launch_agent "$ANTIGRAVITY_LABEL" "$ANTIGRAVITY_PLIST"
 
 echo "==> Stopping app and widget services"
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
@@ -156,6 +166,7 @@ remove_path "$INSTALL_APP"
 remove_path "$CODEX_PLIST"
 remove_path "$CLAUDE_PLIST"
 remove_path "$GLM_PLIST"
+remove_path "$ANTIGRAVITY_PLIST"
 remove_group_containers
 remove_runtime_outputs
 remove_path "$HOME/Library/Caches/com.apple.chrono"
