@@ -301,6 +301,15 @@ write_machine_specific_config() {
   write_entitlements
 }
 
+clear_build_cache() {
+  if [[ -d "$PROJECT_ROOT/.build" ]]; then
+    # Snapshot tools are built via SwiftPM. Clearing `.build` avoids stale local
+    # package state causing path/cache-related build failures on this machine.
+    echo "==> Clearing local build cache"
+    rm -rf "$PROJECT_ROOT/.build"
+  fi
+}
+
 build_app() {
   echo "==> Building app"
   xcodebuild \
@@ -316,6 +325,7 @@ build_app() {
 }
 
 build_snapshot_tools() {
+  clear_build_cache
   echo "==> Building snapshot tools"
   BIN_PATH="$(swift build --package-path "$PROJECT_ROOT" -c release --show-bin-path)"
   swift build --package-path "$PROJECT_ROOT" -c release --product CodexQuotaSnapshotTool

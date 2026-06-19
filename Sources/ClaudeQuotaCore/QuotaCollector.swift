@@ -5,15 +5,50 @@ public struct ClaudeQuotaCollector: Sendable {
 
     public func collect(now: Date = Date()) -> ClaudeQuotaSnapshot {
         do {
-            let credentials = try Self.readCredentials()
-            let responseBody = try fetchQuota(accessToken: credentials.accessToken)
-            var snapshot = try Self.parseResponse(responseBody)
-            snapshot.planType = credentials.planType
-            snapshot.generatedAt = now
-            return snapshot
+            return try collectOnce(now: now)
+        } catch let error as ClaudeQuotaError where error.isRefreshable {
+            // The keychain token is expired or rejected (HTTP 401). Trigger a one-shot
+            // `claude -p` so Claude Code refreshes the OAuth token via the long-lived
+            // refreshToken and writes it back to the keychain, then retry exactly once.
+            // A cooldown prevents respawning `claude` every cycle when refresh is hopeless
+            // (e.g. the refreshToken itself was revoked). All steps are logged to stderr,
+            // which the LaunchAgent routes to Runtime/claude/logs/refresh.err.log.
+            if let last = Self.lastRefreshAttempt() {
+                let elapsed = now.timeIntervalSince(last)
+                if elapsed < Self.refreshCooldown {
+                    let remaining = Int((Self.refreshCooldown - elapsed).rounded())
+                    Self.logRefresh("refresh skipped (cooldown, \(remaining)s remaining)")
+                    return ClaudeQuotaSnapshot(generatedAt: now, error: error.localizedDescription)
+                }
+            }
+
+            Self.logRefresh("refresh triggered (reason=\(error.refreshReason))")
+
+            guard Self.refreshCredentialsViaCLI(at: now) else {
+                return ClaudeQuotaSnapshot(generatedAt: now, error: error.localizedDescription)
+            }
+
+            do {
+                let snapshot = try collectOnce(now: now)
+                Self.logRefresh("retry after refresh: success")
+                return snapshot
+            } catch let retryError {
+                let label = (retryError as? ClaudeQuotaError)?.shortLabel ?? "error"
+                Self.logRefresh("retry after refresh: still failing (\(label))")
+                return ClaudeQuotaSnapshot(generatedAt: now, error: retryError.localizedDescription)
+            }
         } catch {
             return ClaudeQuotaSnapshot(generatedAt: now, error: error.localizedDescription)
         }
+    }
+
+    private func collectOnce(now: Date) throws -> ClaudeQuotaSnapshot {
+        let credentials = try Self.readCredentials()
+        let responseBody = try fetchQuota(accessToken: credentials.accessToken)
+        var snapshot = try Self.parseResponse(responseBody)
+        snapshot.planType = credentials.planType
+        snapshot.generatedAt = now
+        return snapshot
     }
 
     static func readCredentials() throws -> ClaudeOAuthCredentials {
@@ -55,7 +90,7 @@ public struct ClaudeQuotaCollector: Sendable {
             throw ClaudeQuotaError.invalidCredentials("accessToken is empty or missing")
         }
         if let expiresAt = entry.expiresAt, expiresAt.date < now {
-            throw ClaudeQuotaError.invalidCredentials("OAuth token has expired")
+            throw ClaudeQuotaError.tokenExpired
         }
         return ClaudeOAuthCredentials(accessToken: token, planType: entry.subscriptionType)
     }
@@ -100,7 +135,7 @@ public struct ClaudeQuotaCollector: Sendable {
         return try Self.extractSuccessfulBody(output)
     }
 
-    private static func extractSuccessfulBody(_ output: String) throws -> String {
+    static func extractSuccessfulBody(_ output: String) throws -> String {
         guard let markerRange = output.range(of: "\n__HTTP_STATUS__:", options: .backwards) else {
             return output
         }
@@ -109,9 +144,120 @@ public struct ClaudeQuotaCollector: Sendable {
         let status = output[markerRange.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard status == "200" else {
+            if status == "401" {
+                throw ClaudeQuotaError.unauthorized("API error (HTTP 401): \(body)")
+            }
             throw ClaudeQuotaError.httpError("API error (HTTP \(status)): \(body)")
         }
         return body
+    }
+
+    // MARK: - Credential refresh (via Claude Code CLI)
+
+    /// Cooldown between CLI refresh attempts. Caps wasted `claude` spawns when refresh
+    /// can never succeed (e.g. a revoked refreshToken) without delaying normal ~8h expiry.
+    private static let refreshCooldown: TimeInterval = 30 * 60
+
+    /// Triggers a one-shot `claude -p` to refresh the keychain OAuth token.
+    /// Returns true only if `claude` was found and exited cleanly; the real proof of
+    /// success is the caller's retry against the usage endpoint.
+    private static func refreshCredentialsViaCLI(at now: Date) -> Bool {
+        guard let claudePath = locateClaudeBinary() else {
+            logRefresh("claude binary not found (looked in ~/.local/bin, /opt/homebrew/bin, /usr/local/bin)")
+            return false
+        }
+
+        let timeout: TimeInterval = 90
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: claudePath)
+        // `-p` (non-interactive) refreshes during startup auth and then exits on its own.
+        // A bare `claude` would open an interactive TUI and hang here (no TTY in launchd).
+        process.arguments = ["-p", "ping"]
+        // Detach all streams so a chatty/blocked child can never fill a pipe buffer.
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        logRefresh("running: \(claudePath) -p (timeout=\(Int(timeout))s)")
+        let start = Date()
+        do {
+            try process.run()
+            recordRefreshAttempt(at: now)
+        } catch {
+            logRefresh("failed to launch claude: \(error.localizedDescription)")
+            return false
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            usleep(200_000)
+        }
+
+        if process.isRunning {
+            process.terminate()
+            usleep(500_000)
+            if process.isRunning {
+                process.interrupt()
+            }
+            logRefresh("claude timed out after \(Int(timeout))s")
+            return false
+        }
+
+        let elapsed = Date().timeIntervalSince(start)
+        let status = process.terminationStatus
+        logRefresh(String(format: "claude exited status=%d in %.1fs", status, elapsed))
+        return status == 0
+    }
+
+    private static func locateClaudeBinary() -> String? {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser.path
+        let candidates = [
+            "\(home)/.local/bin/claude",
+            "/opt/homebrew/bin/claude",
+            "/usr/local/bin/claude"
+        ]
+        for path in candidates where fm.isExecutableFile(atPath: path) {
+            return path
+        }
+        return nil
+    }
+
+    // MARK: - Refresh cooldown state
+
+    private static func refreshStateURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Caches/ClaudeQuotaWidget", isDirectory: true)
+            .appendingPathComponent("refresh-state.json")
+    }
+
+    private static func lastRefreshAttempt() -> Date? {
+        guard let data = try? Data(contentsOf: refreshStateURL()),
+              let state = try? JSONDecoder().decode([String: Double].self, from: data),
+              let ts = state["lastAttemptAt"] else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: ts)
+    }
+
+    private static func recordRefreshAttempt(at date: Date) {
+        let url = refreshStateURL()
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        if let data = try? JSONEncoder().encode(["lastAttemptAt": date.timeIntervalSince1970]) {
+            try? data.write(to: url)
+        }
+    }
+
+    // MARK: - Logging
+
+    /// Writes a timestamped line to stderr. The LaunchAgent routes stderr to
+    /// Runtime/claude/logs/refresh.err.log for later troubleshooting. Never log tokens.
+    private static func logRefresh(_ message: String) {
+        let ts = ISO8601DateFormatter().string(from: Date())
+        FileHandle.standardError.write(Data("\(ts) [claude-refresh] \(message)\n".utf8))
     }
 
     public static func parseResponse(_ body: String) throws -> ClaudeQuotaSnapshot {
@@ -146,14 +292,50 @@ struct ClaudeOAuthCredentials: Equatable, Sendable {
 
 private enum ClaudeQuotaError: Error, LocalizedError {
     case credentialsNotFound
+    case tokenExpired
     case invalidCredentials(String)
+    case unauthorized(String)
     case httpError(String)
+
+    /// Whether a CLI token refresh could plausibly fix this error. Only expiry and
+    /// HTTP 401 qualify — `credentialsNotFound` (not logged in) and HTTP 403 (scope)
+    /// are never helped by refreshing, so they must not trigger a `claude` spawn.
+    var isRefreshable: Bool {
+        switch self {
+        case .tokenExpired, .unauthorized:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var refreshReason: String {
+        switch self {
+        case .tokenExpired: return "token_expired"
+        case .unauthorized: return "http_401"
+        default: return "unknown"
+        }
+    }
+
+    var shortLabel: String {
+        switch self {
+        case .credentialsNotFound: return "credentials_not_found"
+        case .tokenExpired: return "token_expired"
+        case .invalidCredentials: return "invalid_credentials"
+        case .unauthorized: return "http_401"
+        case .httpError: return "http_error"
+        }
+    }
 
     var errorDescription: String? {
         switch self {
         case .credentialsNotFound:
             return "Claude Code OAuth credentials not found"
+        case .tokenExpired:
+            return "OAuth token has expired"
         case .invalidCredentials(let message):
+            return message
+        case .unauthorized(let message):
             return message
         case .httpError(let message):
             return message

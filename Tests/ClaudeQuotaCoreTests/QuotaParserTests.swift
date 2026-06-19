@@ -91,6 +91,46 @@ import Testing
     #expect(parsed.accessToken == "token-b")
 }
 
+@Test func rejectsExpiredCredentials() {
+    let credentials = """
+    {
+      "claudeAiOauth": {
+        "accessToken": "token-a",
+        "expiresAt": 946684800
+      }
+    }
+    """
+
+    #expect(throws: Error.self) {
+        try ClaudeQuotaCollector.parseCredentialsData(
+            Data(credentials.utf8),
+            now: Date(timeIntervalSince1970: 1_000_000_000)
+        )
+    }
+}
+
+@Test func surfacesUnauthorizedHTTPResponse() {
+    let output = """
+    {"error":"unauthorized"}
+    __HTTP_STATUS__:401
+    """
+
+    #expect(throws: Error.self) {
+        try ClaudeQuotaCollector.extractSuccessfulBody(output)
+    }
+}
+
+@Test func returnsSuccessfulHTTPBody() throws {
+    let output = """
+    {"ok":true}
+    __HTTP_STATUS__:200
+    """
+
+    let body = try ClaudeQuotaCollector.extractSuccessfulBody(output)
+
+    #expect(body == #"{"ok":true}"#)
+}
+
 @Test func marksErrorOrEmptySnapshotsAsRefreshFailures() {
     let errorSnapshot = ClaudeQuotaSnapshot(generatedAt: Date(), error: "network failed")
     let emptySnapshot = ClaudeQuotaSnapshot(generatedAt: Date())

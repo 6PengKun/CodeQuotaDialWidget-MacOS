@@ -219,6 +219,12 @@ tail -n 100 Runtime/glm/logs/refresh.err.log
 - 代理未配置正确。
 - `local-config.env` 中的 App Group 被改坏。
 
+补充说明：
+
+- 截至 `2026-06-19`，Claude Code 本地保存的 OAuth 访问令牌默认约 `8` 小时过期一次。
+- 本项目会在检测到 Claude OAuth 令牌过期或接口返回 `401` 时，尝试通过一次 `claude -p` 触发 Claude Code 刷新本地 OAuth 凭据，然后重试额度拉取。
+- 这个刷新动作只用于更新本地登录态，不会产生任何 Claude 使用额度消耗，因此可以用于长期保持额度读取链路可用。
+
 ### 2. App 能打开，但 widget 仍是旧数据
 
 先手动 kickstart：
