@@ -205,7 +205,7 @@ struct LaunchAgentToggleRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Toggle(isOn: Binding(
-                get: { controller.status == .running },
+                get: { controller.isRunning },
                 set: { controller.setRunning($0) }
             )) {
                 Text("后台自动刷新")

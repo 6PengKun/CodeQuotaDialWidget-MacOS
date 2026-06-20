@@ -4,6 +4,7 @@ public struct CodexQuotaSnapshot: Codable, Equatable, Sendable {
     public var generatedAt: Date
     public var fiveHour: CodexQuotaWindow?
     public var weekly: CodexQuotaWindow?
+    public var monthly: CodexQuotaWindow?
     public var planType: String?
     public var error: String?
 
@@ -11,18 +12,29 @@ public struct CodexQuotaSnapshot: Codable, Equatable, Sendable {
         generatedAt: Date,
         fiveHour: CodexQuotaWindow? = nil,
         weekly: CodexQuotaWindow? = nil,
+        monthly: CodexQuotaWindow? = nil,
         planType: String? = nil,
         error: String? = nil
     ) {
         self.generatedAt = generatedAt
         self.fiveHour = fiveHour
         self.weekly = weekly
+        self.monthly = monthly
         self.planType = planType
         self.error = error
     }
 
+    /// 免费版（Plus 到期或从未订阅）：服务端只下发单个 30 天窗口。
+    public var isFreePlan: Bool {
+        planType?.lowercased() == "free"
+    }
+
     public var hasCompleteDisplayData: Bool {
-        fiveHour != nil && weekly != nil
+        // 免费版只有一个 30 天窗口；付费版需要 5h + weekly 两个窗口。
+        if monthly != nil, fiveHour == nil, weekly == nil {
+            return true
+        }
+        return fiveHour != nil && weekly != nil
     }
 
     public var isRefreshFailure: Bool {

@@ -119,19 +119,27 @@ public struct CodexQuotaCollector: Sendable {
         }
 
         let envelope = try JSONDecoder().decode(CodexUsageEnvelope.self, from: data)
-        let windows = [
-            envelope.rateLimit?.primaryWindow,
-            envelope.rateLimit?.secondaryWindow
-        ].compactMap { $0?.window }
 
         var fiveHour: CodexQuotaWindow?
         var weekly: CodexQuotaWindow?
+        var monthly: CodexQuotaWindow?
 
-        for window in windows {
-            if let duration = window.windowDurationMins, abs(duration - 300) <= 30 {
-                fiveHour = window
-            } else if let duration = window.windowDurationMins, abs(duration - 10_080) <= 120 {
-                weekly = window
+        if envelope.planType?.lowercased() == "free" {
+            // 免费版只有一个窗口（主窗口），直接当作 30 天额度，不依赖时长容差。
+            monthly = envelope.rateLimit?.primaryWindow?.window
+        } else {
+            let windows = [
+                envelope.rateLimit?.primaryWindow,
+                envelope.rateLimit?.secondaryWindow
+            ].compactMap { $0?.window }
+
+            for window in windows {
+                guard let duration = window.windowDurationMins else { continue }
+                if abs(duration - 300) <= 30 {
+                    fiveHour = window
+                } else if abs(duration - 10_080) <= 120 {
+                    weekly = window
+                }
             }
         }
 
@@ -139,6 +147,7 @@ public struct CodexQuotaCollector: Sendable {
             generatedAt: Date(),
             fiveHour: fiveHour,
             weekly: weekly,
+            monthly: monthly,
             planType: envelope.planType
         )
         guard snapshot.hasCompleteDisplayData else {
@@ -146,6 +155,7 @@ public struct CodexQuotaCollector: Sendable {
                 generatedAt: Date(),
                 fiveHour: fiveHour,
                 weekly: weekly,
+                monthly: monthly,
                 planType: envelope.planType,
                 error: "quota windows not found"
             )

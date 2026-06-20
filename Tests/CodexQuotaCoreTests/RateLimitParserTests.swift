@@ -55,6 +55,34 @@ import Testing
     #expect(snapshot.weekly?.remainingPercent == 100)
 }
 
+@Test func parsesFreePlanMonthlyWindow() throws {
+    let body = """
+    {
+      "plan_type": "free",
+      "rate_limit": {
+        "primary_window": {
+          "used_percent": 5,
+          "limit_window_seconds": 2592000,
+          "reset_at": 1784529740
+        },
+        "secondary_window": null
+      }
+    }
+    """
+
+    let snapshot = try CodexQuotaCollector.parseUsageResponse(body)
+
+    #expect(snapshot.planType == "free")
+    #expect(snapshot.isFreePlan)
+    #expect(snapshot.fiveHour == nil)
+    #expect(snapshot.weekly == nil)
+    #expect(snapshot.monthly?.remainingPercent == 95)
+    #expect(snapshot.monthly?.usedPercent == 5)
+    #expect(snapshot.monthly?.windowDurationMins == 43_200)
+    #expect(snapshot.error == nil)
+    #expect(!snapshot.isRefreshFailure)
+}
+
 @Test func marksMissingWindowsAsError() throws {
     let snapshot = try CodexQuotaCollector.parseUsageResponse(#"{"plan_type":"pro","credits":{"has_credits":false}}"#)
 

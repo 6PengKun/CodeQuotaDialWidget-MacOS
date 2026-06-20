@@ -72,7 +72,11 @@ private struct QuotaDialDashboard: View {
         VStack(alignment: .leading, spacing: 8) {
             HeaderView(snapshot: snapshot)
 
-            if snapshot.fiveHour != nil || snapshot.weekly != nil {
+            if let monthly = snapshot.monthly, snapshot.fiveHour == nil {
+                // 免费版：单个 30 天额度表盘。
+                QuotaDialTile(title: "30 天", window: monthly, tint: .indigo)
+                    .frame(maxWidth: .infinity)
+            } else if snapshot.fiveHour != nil || snapshot.weekly != nil {
                 HStack(alignment: .top, spacing: 18) {
                     if let window = snapshot.fiveHour {
                         QuotaDialTile(title: "5h", window: window, tint: .cyan)
@@ -100,10 +104,10 @@ private struct HeaderView: View {
             if let plan = snapshot.planType {
                 Text(plan.uppercased())
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(snapshot.isFreePlan ? Color.secondary : .blue)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
-                    .background(Color.blue.opacity(0.14))
+                    .background((snapshot.isFreePlan ? Color.secondary : Color.blue).opacity(0.14))
                     .clipShape(Capsule())
                     .lineLimit(1)
             }

@@ -10,6 +10,7 @@ import SwiftUI
 @MainActor
 final class LaunchAgentController: ObservableObject {
     @Published private(set) var status: AgentStatus = .checking
+    @Published private(set) var isRunning = false
     @Published private(set) var isToggling = false
     @Published var lastError: String?
 
@@ -26,20 +27,8 @@ final class LaunchAgentController: ObservableObject {
     // MARK: - 状态（真实 launchd 状态）
 
     func refreshStatus() {
-        let domain = domain
-        let label = label
-        let plistPath = plistPath
-
-        status = .checking
         Task {
-            let resolved = await Task.detached(priority: .userInitiated) { () -> AgentStatus in
-                guard FileManager.default.fileExists(atPath: plistPath) else {
-                    return .notInstalled
-                }
-                let loaded = Self.run(["print", "\(domain)/\(label)"]).exitCode == 0
-                return loaded ? .running : .stopped
-            }.value
-            status = resolved
+            await refreshStatusFromLaunchd()
         }
     }
 
@@ -49,6 +38,7 @@ final class LaunchAgentController: ObservableObject {
         guard !isToggling else { return }
         isToggling = true
         lastError = nil
+        isRunning = on
 
         let domain = domain
         let label = label
@@ -66,9 +56,26 @@ final class LaunchAgentController: ObservableObject {
             } catch {
                 lastError = error.localizedDescription
             }
-            refreshStatus()
+            await refreshStatusFromLaunchd()
             isToggling = false
         }
+    }
+
+    private func refreshStatusFromLaunchd() async {
+        let domain = domain
+        let label = label
+        let plistPath = plistPath
+
+        status = .checking
+        let resolved = await Task.detached(priority: .userInitiated) { () -> AgentStatus in
+            guard FileManager.default.fileExists(atPath: plistPath) else {
+                return .notInstalled
+            }
+            let loaded = Self.run(["print", "\(domain)/\(label)"]).exitCode == 0
+            return loaded ? .running : .stopped
+        }.value
+        status = resolved
+        isRunning = resolved == .running
     }
 }
 

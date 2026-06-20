@@ -17,12 +17,13 @@ struct CodexQuotaPanelView: View {
                 Text("Codex 额度")
                     .font(.title3.weight(.semibold))
                 if let plan = snapshot?.planType {
+                    let isFree = snapshot?.isFreePlan ?? false
                     Text(plan.uppercased())
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(isFree ? Color.secondary : .blue)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.14))
+                        .background((isFree ? Color.secondary : Color.blue).opacity(0.14))
                         .clipShape(Capsule())
                 }
                 Spacer()
@@ -33,9 +34,14 @@ struct CodexQuotaPanelView: View {
 
             LaunchAgentToggleRow(controller: agent)
 
-            HStack(spacing: Theme.cardSpacing) {
-                QuotaStatCard(title: "5h", model: QuotaStatModel(snapshot?.fiveHour))
-                QuotaStatCard(title: "本周", model: QuotaStatModel(snapshot?.weekly))
+            if let monthly = snapshot?.monthly, snapshot?.fiveHour == nil {
+                // 免费版：单个 30 天额度表盘。
+                QuotaStatCard(title: "30 天额度", model: QuotaStatModel(monthly))
+            } else {
+                HStack(spacing: Theme.cardSpacing) {
+                    QuotaStatCard(title: "5h", model: QuotaStatModel(snapshot?.fiveHour))
+                    QuotaStatCard(title: "本周", model: QuotaStatModel(snapshot?.weekly))
+                }
             }
 
             if let message = errorText ?? agent.lastError {
