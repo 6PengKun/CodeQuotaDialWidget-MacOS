@@ -1,4 +1,5 @@
 import Foundation
+import QuotaProcessSupport
 
 public struct AntigravityQuotaCollector: Sendable {
     private static let maxCandidatePorts = 8
@@ -330,30 +331,33 @@ private extension AntigravityQuotaCollector {
         csrfToken: String?,
         timeout: TimeInterval
     ) -> Result<(Int, String), Error> {
-        var arguments = [
-            "-s", "-S",
-            "--noproxy", "127.0.0.1,localhost,::1",
-            "--connect-timeout", "\(timeout)",
-            "--max-time", "\(timeout)",
-            "-w", "\n__HTTP_STATUS__:%{http_code}\n",
-            "-X", "POST",
-            endpoint.baseURL + path,
-            "-H", "Accept: application/json",
-            "-H", "Content-Type: application/json",
-            "-H", "Connect-Protocol-Version: 1",
-            "--data", body
+        var configLines = [
+            "silent",
+            "show-error",
+            QuotaProcessSupport.curlConfigLine("noproxy", "127.0.0.1,localhost,::1"),
+            QuotaProcessSupport.curlConfigLine("connect-timeout", "\(timeout)"),
+            QuotaProcessSupport.curlConfigLine("max-time", "\(timeout)"),
+            QuotaProcessSupport.curlConfigLine("write-out", "\n__HTTP_STATUS__:%{http_code}\n"),
+            QuotaProcessSupport.curlConfigLine("request", "POST"),
+            QuotaProcessSupport.curlConfigLine("url", endpoint.baseURL + path),
+            QuotaProcessSupport.curlConfigLine("header", "Accept: application/json"),
+            QuotaProcessSupport.curlConfigLine("header", "Content-Type: application/json"),
+            QuotaProcessSupport.curlConfigLine("header", "Connect-Protocol-Version: 1"),
+            QuotaProcessSupport.curlConfigLine("data", body)
         ]
         if endpoint.isHTTPS {
-            arguments.insert("-k", at: 0)
+            configLines.insert("insecure", at: 0)
         }
         if let csrfToken, !csrfToken.isEmpty {
-            arguments.append(contentsOf: ["-H", "X-Codeium-Csrf-Token: \(csrfToken)"])
+            configLines.append(QuotaProcessSupport.curlConfigLine("header", "X-Codeium-Csrf-Token: \(csrfToken)"))
         }
 
         do {
+            let configURL = try QuotaProcessSupport.writeCurlConfig(configLines)
+            defer { try? FileManager.default.removeItem(at: configURL.deletingLastPathComponent()) }
             let output = try runProcess(
                 executable: "/usr/bin/curl",
-                arguments: arguments,
+                arguments: ["-K", configURL.path],
                 timeout: timeout + 1,
                 allowNonZeroExit: true
             )
@@ -395,30 +399,12 @@ private extension AntigravityQuotaCollector {
         timeout: TimeInterval = 3,
         allowNonZeroExit: Bool = false
     ) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
+        let result = try QuotaProcessSupport.run(executable: executable, arguments: arguments, timeout: timeout)
+        let output = result.stdoutString
+        let errorOutput = result.stderrString
 
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
-        let semaphore = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in
-            semaphore.signal()
-        }
-        try process.run()
-        if semaphore.wait(timeout: .now() + timeout) == .timedOut {
-            process.terminate()
-            throw AntigravityQuotaError.localHTTPError("\(executable) timed out")
-        }
-
-        let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let errorOutput = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-
-        guard allowNonZeroExit || process.terminationStatus == 0 else {
-            throw AntigravityQuotaError.localHTTPError("\(executable) exited with status \(process.terminationStatus): \(errorOutput)")
+        guard allowNonZeroExit || result.status == 0 else {
+            throw AntigravityQuotaError.localHTTPError("\(executable) exited with status \(result.status): \(errorOutput)")
         }
         return output + errorOutput
     }

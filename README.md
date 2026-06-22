@@ -226,10 +226,14 @@ CodeQuotaDialWidget/
 │   ├── install.command           # 一键构建 + 安装
 │   ├── rebuild-local.command     # 重新构建并重签名
 │   └── uninstall.command         # 卸载
-├── Sources/                      # Core / Widget / SnapshotTool 源码
+├── Sources/                      # Core / Widget / SnapshotTool 与共享模块源码
+│   ├── QuotaDialWidgetUI/        # 各额度组件共用的表盘 UI
+│   └── QuotaProcessSupport/      # snapshot tool 共用的进程执行辅助
 ├── Runtime/                      # 构建产物与运行日志
 └── XcodeApp/                     # 宿主 App 工程
 ```
+
+`Sources/*Core/AppGroupConfig.generated.swift` 会在本机安装/重建时自动生成，包含当前机器的 App Group 配置，不需要提交到仓库。
 
 ## 安装结果
 

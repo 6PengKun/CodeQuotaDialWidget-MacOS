@@ -138,6 +138,9 @@ write_runtime_config() {
   # and never clobber later in-app edits. Normally left empty and set in the app.
   if [[ -f "$RUNTIME_CONFIG_FILE" ]]; then
     echo "==> Keeping existing runtime config: $RUNTIME_CONFIG_FILE"
+    # The file holds the GLM API key in plaintext; tighten perms on every install
+    # so configs seeded by older versions (created world-readable) get fixed too.
+    chmod 600 "$RUNTIME_CONFIG_FILE"
     return
   fi
 
@@ -163,6 +166,7 @@ write_runtime_config() {
   "remoteHosts" : [$hosts_json]
 }
 EOF
+  chmod 600 "$RUNTIME_CONFIG_FILE"
 }
 
 write_coded_sources() {

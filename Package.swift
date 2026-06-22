@@ -9,6 +9,14 @@ let package = Package(
     ],
     products: [
         .library(
+            name: "QuotaProcessSupport",
+            targets: ["QuotaProcessSupport"]
+        ),
+        .library(
+            name: "QuotaDialWidgetUI",
+            targets: ["QuotaDialWidgetUI"]
+        ),
+        .library(
             name: "CodexQuotaCore",
             targets: ["CodexQuotaCore"]
         ),
@@ -71,11 +79,18 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "CodexQuotaCore"
+            name: "QuotaProcessSupport"
+        ),
+        .target(
+            name: "QuotaDialWidgetUI"
+        ),
+        .target(
+            name: "CodexQuotaCore",
+            dependencies: ["QuotaProcessSupport"]
         ),
         .target(
             name: "CodexQuotaDialWidget",
-            dependencies: ["CodexQuotaCore"]
+            dependencies: ["CodexQuotaCore", "QuotaDialWidgetUI"]
         ),
         .executableTarget(
             name: "CodexQuotaSnapshotTool",
@@ -86,11 +101,12 @@ let package = Package(
             dependencies: ["CodexQuotaCore"]
         ),
         .target(
-            name: "ClaudeQuotaCore"
+            name: "ClaudeQuotaCore",
+            dependencies: ["QuotaProcessSupport"]
         ),
         .target(
             name: "ClaudeQuotaDialWidget",
-            dependencies: ["ClaudeQuotaCore"]
+            dependencies: ["ClaudeQuotaCore", "QuotaDialWidgetUI"]
         ),
         .executableTarget(
             name: "ClaudeQuotaSnapshotTool",
@@ -101,11 +117,12 @@ let package = Package(
             dependencies: ["ClaudeQuotaCore"]
         ),
         .target(
-            name: "GLMQuotaCore"
+            name: "GLMQuotaCore",
+            dependencies: ["QuotaProcessSupport"]
         ),
         .target(
             name: "GLMQuotaDialWidget",
-            dependencies: ["GLMQuotaCore"]
+            dependencies: ["GLMQuotaCore", "QuotaDialWidgetUI"]
         ),
         .executableTarget(
             name: "GLMQuotaSnapshotTool",
@@ -116,11 +133,12 @@ let package = Package(
             dependencies: ["GLMQuotaCore"]
         ),
         .target(
-            name: "AntigravityQuotaCore"
+            name: "AntigravityQuotaCore",
+            dependencies: ["QuotaProcessSupport"]
         ),
         .target(
             name: "AntigravityQuotaDialWidget",
-            dependencies: ["AntigravityQuotaCore"]
+            dependencies: ["AntigravityQuotaCore", "QuotaDialWidgetUI"]
         ),
         .executableTarget(
             name: "AntigravityQuotaSnapshotTool",
@@ -131,7 +149,8 @@ let package = Package(
             dependencies: ["AntigravityQuotaCore"]
         ),
         .target(
-            name: "UsageQuotaCore"
+            name: "UsageQuotaCore",
+            dependencies: ["QuotaProcessSupport"]
         ),
         .target(
             name: "UsageQuotaDialWidget",

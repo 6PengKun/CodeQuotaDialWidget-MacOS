@@ -29,7 +29,7 @@ struct GLMQuotaPanelView: View {
                 HStack(spacing: Theme.cardSpacing) {
                     QuotaStatCard(title: "工具类额度", model: QuotaStatModel(snapshot?.timeLimit))
                     QuotaStatCard(title: "5h", model: QuotaStatModel(snapshot?.tokensLimit5))
-                    QuotaStatCard(title: "本周", model: QuotaStatModel(snapshot?.tokensLimitMonth))
+                    QuotaStatCard(title: "本周", model: QuotaStatModel(snapshot?.tokensLimitWeek))
                 }
 
                 if let message = errorText ?? agent.lastError {

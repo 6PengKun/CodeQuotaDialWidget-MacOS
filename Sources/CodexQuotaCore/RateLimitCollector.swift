@@ -1,4 +1,5 @@
 import Foundation
+import QuotaProcessSupport
 
 public struct CodexQuotaCollector: Sendable {
     public init() {}
@@ -31,18 +32,16 @@ public struct CodexQuotaCollector: Sendable {
         process.standardOutput = outputPipe
         process.standardError = Pipe()
 
-        try process.run()
-        process.waitUntilExit()
+        let result = try QuotaProcessSupport.run(process)
 
-        guard process.terminationStatus == 0 else {
+        guard result.status == 0 else {
             return nil
         }
 
-        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        guard !data.isEmpty else {
+        guard !result.stdout.isEmpty else {
             return nil
         }
-        return try parseCredentialsData(data)
+        return try parseCredentialsData(result.stdout)
     }
 
     private static func readCredentialsFromFile() throws -> CodexCredentials {
@@ -70,43 +69,43 @@ public struct CodexQuotaCollector: Sendable {
     }
 
     private func fetchQuota(credentials: CodexCredentials) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-
-        var arguments = [
-            "-s", "-S",
-            "--max-time", "15",
-            "-w", "\n__HTTP_STATUS__:%{http_code}\n",
-            "https://chatgpt.com/backend-api/wham/usage",
-            "-H", "Authorization: Bearer \(credentials.accessToken)",
-            "-H", "User-Agent: codex-cli",
-            "-H", "Accept: application/json"
+        var configLines = [
+            "silent",
+            "show-error",
+            QuotaProcessSupport.curlConfigLine("max-time", "15"),
+            QuotaProcessSupport.curlConfigLine("write-out", "\n__HTTP_STATUS__:%{http_code}\n"),
+            QuotaProcessSupport.curlConfigLine("url", "https://chatgpt.com/backend-api/wham/usage"),
+            QuotaProcessSupport.curlConfigLine("header", "Authorization: Bearer \(credentials.accessToken)"),
+            QuotaProcessSupport.curlConfigLine("header", "User-Agent: codex-cli"),
+            QuotaProcessSupport.curlConfigLine("header", "Accept: application/json")
         ]
         if let proxy = CodexQuotaProxyConfig.proxyURL, !proxy.isEmpty {
-            arguments.append(contentsOf: ["--proxy", proxy])
+            configLines.append(QuotaProcessSupport.curlConfigLine("proxy", proxy))
         }
         if let accountId = credentials.accountId, !accountId.isEmpty {
-            arguments.append(contentsOf: ["-H", "ChatGPT-Account-Id: \(accountId)"])
+            configLines.append(QuotaProcessSupport.curlConfigLine("header", "ChatGPT-Account-Id: \(accountId)"))
         }
-        process.arguments = arguments
+
+        let configURL = try QuotaProcessSupport.writeCurlConfig(configLines)
+        defer { try? FileManager.default.removeItem(at: configURL.deletingLastPathComponent()) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        process.arguments = ["-K", configURL.path]
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
-        try process.run()
-        process.waitUntilExit()
+        let result = try QuotaProcessSupport.run(process)
 
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-
-        guard process.terminationStatus == 0 else {
-            let stderr = String(data: errorData, encoding: .utf8) ?? "unknown error"
-            throw CodexQuotaError.httpError("curl exited with status \(process.terminationStatus): \(stderr)")
+        guard result.status == 0 else {
+            let stderr = String(data: result.stderr, encoding: .utf8) ?? "unknown error"
+            throw CodexQuotaError.httpError("curl exited with status \(result.status): \(stderr)")
         }
 
-        let output = String(data: outputData, encoding: .utf8) ?? ""
+        let output = String(data: result.stdout, encoding: .utf8) ?? ""
         if output.isEmpty {
             throw CodexQuotaError.httpError("empty response from Codex API")
         }
@@ -176,6 +175,7 @@ public struct CodexQuotaCollector: Sendable {
         }
         return body
     }
+
 }
 
 struct CodexCredentials: Equatable, Sendable {

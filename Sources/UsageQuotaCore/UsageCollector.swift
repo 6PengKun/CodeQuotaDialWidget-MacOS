@@ -1,4 +1,5 @@
 import Foundation
+import QuotaProcessSupport
 
 /// Collects usage by shelling out to the official `ccusage`:
 /// - locally via `npx ccusage@latest daily --json`
@@ -548,44 +549,11 @@ public struct UsageCollector: Sendable {
     }
 
     private static func runProcess(executable: String, arguments: [String]) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardInput = FileHandle.nullDevice
+        let result = try QuotaProcessSupport.run(executable: executable, arguments: arguments, timeout: 90)
+        let output = result.stdoutString
+        let errorOutput = result.stderrString
 
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
-        // Drain both pipes on background threads while the process runs. ccusage
-        // can emit well over the 64KB pipe buffer, so reading only after exit
-        // would deadlock the child against a full pipe. readDataToEndOfFile
-        // returns once the write ends close, i.e. when the process exits.
-        let outputBox = DataBox()
-        let errorBox = DataBox()
-        let readGroup = DispatchGroup()
-        let readQueue = DispatchQueue(label: "usage.ccusage.read", attributes: .concurrent)
-        let outputHandle = outputPipe.fileHandleForReading
-        let errorHandle = errorPipe.fileHandleForReading
-        readQueue.async(group: readGroup) { outputBox.value = outputHandle.readDataToEndOfFile() }
-        readQueue.async(group: readGroup) { errorBox.value = errorHandle.readDataToEndOfFile() }
-
-        let exited = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in exited.signal() }
-        try process.run()
-
-        if exited.wait(timeout: .now() + 90) == .timedOut {
-            process.terminate()
-            _ = readGroup.wait(timeout: .now() + 5)
-            throw UsageCollectorError.commandFailed("\(executable) timed out")
-        }
-        readGroup.wait()
-
-        let output = String(data: outputBox.value, encoding: .utf8) ?? ""
-        let errorOutput = String(data: errorBox.value, encoding: .utf8) ?? ""
-
-        guard process.terminationStatus == 0 else {
+        guard result.status == 0 else {
             throw UsageCollectorError.commandFailed(errorOutput.isEmpty ? output : errorOutput)
         }
         return output
@@ -658,16 +626,6 @@ final class Box<T>: @unchecked Sendable {
     func withLock<R>(_ body: (inout T) -> R) -> R {
         lock.lock(); defer { lock.unlock() }
         return body(&storage)
-    }
-}
-
-final class DataBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage = Data()
-
-    var value: Data {
-        get { lock.lock(); defer { lock.unlock() }; return storage }
-        set { lock.lock(); storage = newValue; lock.unlock() }
     }
 }
 

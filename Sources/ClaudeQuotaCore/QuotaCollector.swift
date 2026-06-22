@@ -1,4 +1,5 @@
 import Foundation
+import QuotaProcessSupport
 
 public struct ClaudeQuotaCollector: Sendable {
     public init() {}
@@ -67,18 +68,16 @@ public struct ClaudeQuotaCollector: Sendable {
         process.standardOutput = outputPipe
         process.standardError = Pipe()
 
-        try process.run()
-        process.waitUntilExit()
+        let result = try QuotaProcessSupport.run(process)
 
-        guard process.terminationStatus == 0 else {
+        guard result.status == 0 else {
             return nil
         }
 
-        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        guard !data.isEmpty else {
+        guard !result.stdout.isEmpty else {
             return nil
         }
-        return try parseCredentialsData(data)
+        return try parseCredentialsData(result.stdout)
     }
 
     static func parseCredentialsData(_ data: Data, now: Date = Date()) throws -> ClaudeOAuthCredentials {
@@ -96,39 +95,40 @@ public struct ClaudeQuotaCollector: Sendable {
     }
 
     private func fetchQuota(accessToken: String) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        var arguments = [
-            "-s", "-S",
-            "--max-time", "15",
-            "-w", "\n__HTTP_STATUS__:%{http_code}\n",
-            "https://api.anthropic.com/api/oauth/usage",
-            "-H", "Authorization: Bearer \(accessToken)",
-            "-H", "anthropic-beta: oauth-2025-04-20",
-            "-H", "Accept: application/json"
+        var configLines = [
+            "silent",
+            "show-error",
+            QuotaProcessSupport.curlConfigLine("max-time", "15"),
+            QuotaProcessSupport.curlConfigLine("write-out", "\n__HTTP_STATUS__:%{http_code}\n"),
+            QuotaProcessSupport.curlConfigLine("url", "https://api.anthropic.com/api/oauth/usage"),
+            QuotaProcessSupport.curlConfigLine("header", "Authorization: Bearer \(accessToken)"),
+            QuotaProcessSupport.curlConfigLine("header", "anthropic-beta: oauth-2025-04-20"),
+            QuotaProcessSupport.curlConfigLine("header", "Accept: application/json")
         ]
         if let proxy = ClaudeQuotaProxyConfig.proxyURL, !proxy.isEmpty {
-            arguments.append(contentsOf: ["--proxy", proxy])
+            configLines.append(QuotaProcessSupport.curlConfigLine("proxy", proxy))
         }
-        process.arguments = arguments
+
+        let configURL = try QuotaProcessSupport.writeCurlConfig(configLines)
+        defer { try? FileManager.default.removeItem(at: configURL.deletingLastPathComponent()) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        process.arguments = ["-K", configURL.path]
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
-        try process.run()
-        process.waitUntilExit()
+        let result = try QuotaProcessSupport.run(process)
 
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-
-        guard process.terminationStatus == 0 else {
-            let stderr = String(data: errorData, encoding: .utf8) ?? "unknown error"
-            throw ClaudeQuotaError.httpError("curl exited with status \(process.terminationStatus): \(stderr)")
+        guard result.status == 0 else {
+            let stderr = String(data: result.stderr, encoding: .utf8) ?? "unknown error"
+            throw ClaudeQuotaError.httpError("curl exited with status \(result.status): \(stderr)")
         }
 
-        let output = String(data: outputData, encoding: .utf8) ?? ""
+        let output = String(data: result.stdout, encoding: .utf8) ?? ""
         if output.isEmpty {
             throw ClaudeQuotaError.httpError("empty response from Claude API")
         }

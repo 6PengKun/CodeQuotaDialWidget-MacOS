@@ -19,6 +19,7 @@ do {
     if snapshot.isRefreshFailure, let previous = try? store.load() {
         let reason = snapshot.error ?? "quota windows not found"
         fputs("Quota refresh failed; keeping previous snapshot from \(previous.generatedAt): \(reason)\n", stderr)
+        WidgetCenter.shared.reloadAllTimelines()
         print(outputURL.path)
         exit(0)
     }

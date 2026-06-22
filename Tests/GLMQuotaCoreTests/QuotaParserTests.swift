@@ -20,9 +20,9 @@ import Testing
     #expect(snapshot.tokensLimit5?.remainingPercent == 80)
     #expect(snapshot.tokensLimit5?.usedPercent == 20)
 
-    #expect(snapshot.tokensLimitMonth != nil)
-    #expect(snapshot.tokensLimitMonth?.remainingPercent == 82)
-    #expect(snapshot.tokensLimitMonth?.usedPercent == 18)
+    #expect(snapshot.tokensLimitWeek != nil)
+    #expect(snapshot.tokensLimitWeek?.remainingPercent == 82)
+    #expect(snapshot.tokensLimitWeek?.usedPercent == 18)
 
     #expect(snapshot.level == "pro")
     #expect(snapshot.error == nil)
@@ -57,7 +57,7 @@ import Testing
         generatedAt: Date(),
         timeLimit: GLMQuotaWindow(remainingPercent: 70),
         tokensLimit5: GLMQuotaWindow(remainingPercent: 80),
-        tokensLimitMonth: GLMQuotaWindow(remainingPercent: 90)
+        tokensLimitWeek: GLMQuotaWindow(remainingPercent: 90)
     )
     let partialSnapshot = GLMQuotaSnapshot(
         generatedAt: Date(),

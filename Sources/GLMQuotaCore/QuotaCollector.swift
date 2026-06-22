@@ -1,4 +1,5 @@
 import Foundation
+import QuotaProcessSupport
 
 public struct GLMQuotaCollector: Sendable {
 
@@ -17,38 +18,39 @@ public struct GLMQuotaCollector: Sendable {
     }
 
     private func fetchQuota(apiKey: String) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        var arguments = [
-            "-s", "-S",
-            "--max-time", "30",
-            "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
-            "-H", "Authorization: \(apiKey)",
-            "-H", "Accept-Language: en-US,en",
-            "-H", "Content-Type: application/json"
+        var configLines = [
+            "silent",
+            "show-error",
+            QuotaProcessSupport.curlConfigLine("max-time", "30"),
+            QuotaProcessSupport.curlConfigLine("url", "https://open.bigmodel.cn/api/monitor/usage/quota/limit"),
+            QuotaProcessSupport.curlConfigLine("header", "Authorization: \(apiKey)"),
+            QuotaProcessSupport.curlConfigLine("header", "Accept-Language: en-US,en"),
+            QuotaProcessSupport.curlConfigLine("header", "Content-Type: application/json")
         ]
         if let proxy = GLMQuotaProxyConfig.proxyURL, !proxy.isEmpty {
-            arguments.append(contentsOf: ["--proxy", proxy])
+            configLines.append(QuotaProcessSupport.curlConfigLine("proxy", proxy))
         }
-        process.arguments = arguments
+
+        let configURL = try QuotaProcessSupport.writeCurlConfig(configLines)
+        defer { try? FileManager.default.removeItem(at: configURL.deletingLastPathComponent()) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        process.arguments = ["-K", configURL.path]
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
-        try process.run()
-        process.waitUntilExit()
+        let result = try QuotaProcessSupport.run(process)
 
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-
-        guard process.terminationStatus == 0 else {
-            let stderr = String(data: errorData, encoding: .utf8) ?? "unknown error"
-            throw GLMQuotaError.httpError("curl exited with status \(process.terminationStatus): \(stderr)")
+        guard result.status == 0 else {
+            let stderr = String(data: result.stderr, encoding: .utf8) ?? "unknown error"
+            throw GLMQuotaError.httpError("curl exited with status \(result.status): \(stderr)")
         }
 
-        let output = String(data: outputData, encoding: .utf8) ?? ""
+        let output = String(data: result.stdout, encoding: .utf8) ?? ""
         if output.isEmpty {
             throw GLMQuotaError.httpError("empty response from GLM API")
         }
@@ -68,7 +70,7 @@ public struct GLMQuotaCollector: Sendable {
 
         var timeLimit: GLMQuotaWindow?
         var tokensLimit5: GLMQuotaWindow?
-        var tokensLimitMonth: GLMQuotaWindow?
+        var tokensLimitWeek: GLMQuotaWindow?
 
         for item in envelope.data.limits {
             let resetsAt = item.nextResetTime.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000.0) }
@@ -92,7 +94,7 @@ public struct GLMQuotaCollector: Sendable {
                 case 3:
                     tokensLimit5 = window
                 case 6:
-                    tokensLimitMonth = window
+                    tokensLimitWeek = window
                 default:
                     break
                 }
@@ -105,10 +107,11 @@ public struct GLMQuotaCollector: Sendable {
             generatedAt: Date(),
             timeLimit: timeLimit,
             tokensLimit5: tokensLimit5,
-            tokensLimitMonth: tokensLimitMonth,
+            tokensLimitWeek: tokensLimitWeek,
             level: envelope.data.level
         )
     }
+
 }
 
 private enum GLMQuotaError: Error, LocalizedError {

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import QuotaProcessSupport
 import SwiftUI
 
 /// 控制「桌面组件后台刷新」对应的用户级 launchd agent 是否运行。
@@ -115,21 +116,12 @@ private extension LaunchAgentController {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         process.arguments = arguments
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
         do {
-            try process.run()
+            let result = try QuotaProcessSupport.run(process)
+            return RunResult(exitCode: result.status, combined: result.stdoutString + "\n" + result.stderrString)
         } catch {
             return RunResult(exitCode: -1, combined: error.localizedDescription)
         }
-        process.waitUntilExit()
-
-        let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let errorOut = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return RunResult(exitCode: Int(process.terminationStatus), combined: output + "\n" + errorOut)
     }
 }
 
