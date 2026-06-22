@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/example_all.png" alt="三个额度组件示例" width="800" />
+  <img src="assets/example_all.png" alt="组件示例" width="800" />
 </p>
 <p align="center">
   <img src="assets/example_desktop.png" alt="桌面效果" width="800" />
@@ -24,8 +24,8 @@
 - [适用范围](#适用范围)
 - [前提条件](#前提条件)
 - [快速开始](#快速开始)
-- [消耗统计组件](#消耗统计组件)
 - [工作原理](#工作原理)
+- [消耗统计组件](#消耗统计组件)
 - [项目结构](#项目结构)
 - [本地配置](#本地配置)
 - [安装结果](#安装结果)
@@ -82,21 +82,21 @@ GLM 配置文件示例：
 
 ## 本地配置
 
-首次运行后会生成 `local-config.env`，所有机器相关内容都集中在此维护：
+初始没有 `local-config.env`，首次安装时会以仓库中的示例文件 `local-config.example.env` 为模板自动生成；生成后即以 `local-config.env` 为实际配置，后续要调整都改这个文件（改示例文件不会再生效）。主要配置内容如下：
 
-| 变量                                            | 说明                                                         |
-| ----------------------------------------------- | ------------------------------------------------------------ |
-| `TEAM_ID`                                       | Apple 开发团队 ID（安装时自动获取填充）                      |
-| `CODEX_APP_GROUP`                               | Codex 组件 App Group（安装时自动获取填充）                   |
-| `CLAUDE_APP_GROUP`                              | Claude 组件 App Group（安装时自动获取填充）                  |
-| `GLM_APP_GROUP`                                 | GLM 组件 App Group（安装时自动获取填充）                     |
-| `ANTIGRAVITY_APP_GROUP`                         | Antigravity 组件 App Group（安装时自动获取填充）             |
-| `USAGE_APP_GROUP`                               | 消耗统计组件 App Group（安装时自动获取填充）                 |
-| `USAGE_REMOTE_HOST`                             | 消耗统计的远端 SSH 主机（多端联合统计），可逗号分隔多个、只合并连得上的，留空=仅本地（选填） |
-| `INSTALL_BASE`                                  | 安装目录（默认即可）                                         |
-| `REFRESH_INTERVAL`                              | 刷新间隔（默认即可）                                         |
-| `PATH_PREFIX`                                   | 可执行文件路径前缀                                           |
-| **`HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` ** | **代理配置（必填，否则codex和claude code无法获取）**         |
+| 变量                                       | 说明                                                         |
+| ------------------------------------------ | ------------------------------------------------------------ |
+| `TEAM_ID`                                  | Apple 开发团队 ID（安装时自动获取填充）                      |
+| `CODEX_APP_GROUP`                          | Codex 组件 App Group（安装时自动获取填充）                   |
+| `CLAUDE_APP_GROUP`                         | Claude 组件 App Group（安装时自动获取填充）                  |
+| `GLM_APP_GROUP`                            | GLM 组件 App Group（安装时自动获取填充）                     |
+| `ANTIGRAVITY_APP_GROUP`                    | Antigravity 组件 App Group（安装时自动获取填充）             |
+| `USAGE_APP_GROUP`                          | 消耗统计组件 App Group（安装时自动获取填充）                 |
+| `USAGE_REMOTE_HOST`                        | 消耗统计的远端 SSH 主机（多端联合统计），可逗号分隔多个、只合并连得上的，留空=仅本地（选填） |
+| `INSTALL_BASE`                             | 安装目录（默认即可）                                         |
+| `REFRESH_INTERVAL`                         | 刷新间隔（默认即可）                                         |
+| `PATH_PREFIX`                              | 可执行文件路径前缀（默认即可）                               |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` | **代理配置（必填，否则codex和claude code无法获取）**         |
 
 本地代理配置示例（`7897`改成自己的端口号）：
 
@@ -104,6 +104,16 @@ GLM 配置文件示例：
 HTTPS_PROXY="http://127.0.0.1:7897"
 HTTP_PROXY="http://127.0.0.1:7897"
 ALL_PROXY="socks5://127.0.0.1:7897"
+```
+
+如果需要设置多端联合统计用量，在 `local-config.env` 的 `USAGE_REMOTE_HOST` 中可逗号分隔填多个，每个并发尝试、**只合并连得上的**。要求远端机器**自带 `ccusage`** 且本机到远端**免密 SSH**（key 在 `~/.ssh`、host 已在 `known_hosts`），例如：
+
+```
+USAGE_REMOTE_HOST="xx.xxx.x.11"
+```
+
+```
+USAGE_REMOTE_HOST="xx.xxx.x.11,xx.xxx.x.12"
 ```
 
 > 迁移到另一台机器时，原则上只需重新运行 `script/install.command`，再按需调整这一个文件。
@@ -120,16 +130,16 @@ cd CodeQuotaDialWidget
 首次执行会自动完成：
 
 1. 从本机开发身份探测 `Team ID`
-2. 生成 `local-config.env`
+2. **生成 `local-config.env`**
 3. 生成本机需要的 App Group 配置和 entitlements
-4. 构建 App、Widget 以及三个 snapshot tool
+4. 构建 App、Widget 以及五个 snapshot tool
 5. 使用 `ad-hoc` 方式重签名
 6. 安装到 `/Applications/CodeQuotaDialXcode.app`
-7. 生成并加载三个 `LaunchAgent`
+7. 生成并加载五个 `LaunchAgent`
 
 安装完成后，**双击桌面 → 添加组件**即可。
 
-后续更新只需重新执行以下任一命令：
+后续更新 `local-config.env` 或者更新代码仓库，只需重新执行以下任一命令：
 
 ```bash
 ./script/install.command
@@ -137,7 +147,7 @@ cd CodeQuotaDialWidget
 ./script/rebuild-local.command
 ```
 
-## 额度统计工作原理
+## 工作原理
 
 ```text
 LaunchAgent
@@ -285,11 +295,11 @@ tail -n 100 Runtime/antigravity/logs/refresh.err.log
 
 常见原因：
 
+- 代理未配置正确。
 - Codex 未使用 ChatGPT OAuth 登录，或 Keychain / `~/.codex/auth.json` 中没有可用凭据。
 - Claude Code 未登录，或 Keychain 中没有 `Claude Code-credentials`。
 - `~/.glm_quota_config.json` 不存在。
 - Antigravity 未运行，或本地 language server 没有暴露可用的 Connect RPC。
-- 代理未配置正确。
 - `local-config.env` 中的 App Group 被改坏。
 
 补充说明：
