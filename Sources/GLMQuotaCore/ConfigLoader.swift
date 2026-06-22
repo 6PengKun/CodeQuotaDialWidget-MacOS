@@ -8,39 +8,27 @@ public struct GLMConfig: Sendable {
     }
 
     public static func load() throws -> GLMConfig {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let configPath = home.appendingPathComponent(".glm_quota_config.json")
-
-        guard FileManager.default.fileExists(atPath: configPath.path) else {
-            throw GLMConfigError.fileNotFound(configPath.path)
+        // Single source: the API key set in the GLM panel (shared runtime config).
+        guard let key = GLMQuotaApiKeyConfig.apiKey else {
+            throw GLMConfigError.notConfigured
         }
+        return GLMConfig(apiKey: key)
+    }
 
-        let data = try Data(contentsOf: configPath)
-        let decoded = try JSONDecoder().decode(ConfigFile.self, from: data)
-
-        let apiKey = decoded.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !apiKey.isEmpty else {
-            throw GLMConfigError.emptyKey
-        }
-
-        return GLMConfig(apiKey: apiKey)
+    /// The resolved API key, or `nil` if none is set. Lets the app show a
+    /// "已设置/未设置" state without surfacing the key itself.
+    public static func resolvedApiKey() -> String? {
+        GLMQuotaApiKeyConfig.apiKey
     }
 }
 
-private struct ConfigFile: Decodable {
-    var apiKey: String
-}
-
 public enum GLMConfigError: Error, LocalizedError {
-    case fileNotFound(String)
-    case emptyKey
+    case notConfigured
 
     public var errorDescription: String? {
         switch self {
-        case .fileNotFound(let path):
-            return "配置文件不存在: \(path)，请创建并填入 {\"apiKey\": \"YOUR_KEY\"}"
-        case .emptyKey:
-            return "apiKey 为空，请在 ~/.glm_quota_config.json 中填入有效的 API Key"
+        case .notConfigured:
+            return "未配置 GLM API Key，请在 GLM 组件页面填写"
         }
     }
 }

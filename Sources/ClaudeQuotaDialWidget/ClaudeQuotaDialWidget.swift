@@ -25,7 +25,7 @@ public struct ClaudeQuotaProvider: TimelineProvider {
 
     public func getTimeline(in context: Context, completion: @escaping (Timeline<ClaudeQuotaEntry>) -> Void) {
         let entry = ClaudeQuotaEntry(date: Date(), snapshot: snapshot(forPreview: context.isPreview))
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 1, to: Date()) ?? Date()
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 2, to: Date()) ?? Date()
         completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
     }
 

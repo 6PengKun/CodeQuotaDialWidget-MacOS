@@ -12,63 +12,35 @@ struct ClaudeQuotaPanelView: View {
     )
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.spacing) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Claude 额度")
-                    .font(.title3.weight(.semibold))
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.spacing) {
                 if let plan = snapshot?.planType {
-                    Text(plan.uppercased())
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.blue)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.14))
-                        .clipShape(Capsule())
+                    TagBadge(text: plan.uppercased(), tint: .orange)
                 }
-                Spacer()
-                Text(snapshot.map { "更新 \(timeFormatter.string(from: $0.generatedAt))" } ?? "未刷新")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
 
-            LaunchAgentToggleRow(controller: agent)
+                LaunchAgentToggleRow(controller: agent)
 
-            HStack(spacing: Theme.cardSpacing) {
-                QuotaStatCard(title: "5h", model: QuotaStatModel(snapshot?.fiveHour))
-                QuotaStatCard(title: "本周", model: QuotaStatModel(snapshot?.weekly))
-            }
-
-            if let message = errorText ?? agent.lastError {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .lineLimit(3)
-            }
-
-            HStack {
-                Button {
-                    Task {
-                        await refresh()
-                    }
-                } label: {
-                    if isRefreshing {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Text("刷新额度")
-                    }
+                HStack(spacing: Theme.cardSpacing) {
+                    QuotaStatCard(title: "5h", model: QuotaStatModel(snapshot?.fiveHour))
+                    QuotaStatCard(title: "本周", model: QuotaStatModel(snapshot?.weekly))
                 }
-                .disabled(isRefreshing)
 
-                Spacer()
+                if let message = errorText ?? agent.lastError {
+                    InlineBanner(text: message)
+                }
 
-                Text("桌面组件每 2 分钟读取快照")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                FootnoteRow(text: "桌面组件每 2 分钟读取快照")
+            }
+            .padding(Theme.contentPadding)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .navigationTitle("Claude 额度")
+        .navigationSubtitle(snapshot.map { "更新于 \(timeFormatter.string(from: $0.generatedAt))" } ?? "未刷新")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                RefreshButton(isRefreshing: isRefreshing) { await refresh() }
             }
         }
-        .padding(Theme.contentPadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             loadSnapshot()
             agent.refreshStatus()

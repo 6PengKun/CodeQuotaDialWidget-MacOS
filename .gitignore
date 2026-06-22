@@ -1,4 +1,3 @@
-local-config.env
 .DS_Store
 .build/
 .swiftpm/

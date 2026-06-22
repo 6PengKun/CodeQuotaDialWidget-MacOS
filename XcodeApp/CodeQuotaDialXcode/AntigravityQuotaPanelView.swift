@@ -12,72 +12,48 @@ struct AntigravityQuotaPanelView: View {
     )
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.spacing) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Antigravity")
-                    .font(.title3.weight(.semibold))
-                if let planType = snapshot?.planType {
-                    Text(planType.uppercased())
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.blue)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.14))
-                        .clipShape(Capsule())
-                }
-                if let email = snapshot?.email {
-                    Text(email)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text(snapshot.map { "更新 \(timeFormatter.string(from: $0.generatedAt))" } ?? "未刷新")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            LaunchAgentToggleRow(controller: agent)
-
-            HStack(spacing: Theme.cardSpacing) {
-                ForEach(AntigravityQuotaBucket.allCases, id: \.self) { bucket in
-                    QuotaStatCard(
-                        title: bucket.displayName,
-                        model: QuotaStatModel(snapshot?.model(for: bucket))
-                    )
-                }
-            }
-
-            if let message = errorText ?? agent.lastError {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .lineLimit(3)
-            }
-
-            HStack {
-                Button {
-                    Task {
-                        await refresh()
-                    }
-                } label: {
-                    if isRefreshing {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Text("刷新额度")
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.spacing) {
+                if snapshot?.planType != nil || snapshot?.email != nil {
+                    HStack(spacing: 8) {
+                        if let planType = snapshot?.planType {
+                            TagBadge(text: planType.uppercased(), tint: .purple)
+                        }
+                        if let email = snapshot?.email {
+                            Text(email)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
-                .disabled(isRefreshing)
 
-                Spacer()
+                LaunchAgentToggleRow(controller: agent)
 
-                Text("需要本机 Antigravity 正在运行")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: Theme.cardSpacing) {
+                    ForEach(AntigravityQuotaBucket.allCases, id: \.self) { bucket in
+                        QuotaStatCard(
+                            title: bucket.displayName,
+                            model: QuotaStatModel(snapshot?.model(for: bucket))
+                        )
+                    }
+                }
+
+                if let message = errorText ?? agent.lastError {
+                    InlineBanner(text: message)
+                }
+
+                FootnoteRow(text: "需要本机 Antigravity 正在运行")
+            }
+            .padding(Theme.contentPadding)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .navigationTitle("Antigravity 额度")
+        .navigationSubtitle(snapshot.map { "更新于 \(timeFormatter.string(from: $0.generatedAt))" } ?? "未刷新")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                RefreshButton(isRefreshing: isRefreshing) { await refresh() }
             }
         }
-        .padding(Theme.contentPadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             loadSnapshot()
             agent.refreshStatus()

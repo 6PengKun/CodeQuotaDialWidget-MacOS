@@ -25,7 +25,7 @@ public struct AntigravityQuotaProvider: TimelineProvider {
 
     public func getTimeline(in context: Context, completion: @escaping (Timeline<AntigravityQuotaEntry>) -> Void) {
         let entry = AntigravityQuotaEntry(date: Date(), snapshot: snapshot(forPreview: context.isPreview))
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 1, to: Date()) ?? Date()
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 2, to: Date()) ?? Date()
         completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
     }
 

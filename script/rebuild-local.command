@@ -4,8 +4,6 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PA
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CONFIG_FILE="$PROJECT_ROOT/local-config.env"
-CONFIG_TEMPLATE="$PROJECT_ROOT/local-config.example.env"
 DERIVED_DATA="$PROJECT_ROOT/.build/DerivedData"
 GENERATED_DIR="$PROJECT_ROOT/.build/generated"
 APP_NAME="CodeQuotaDialXcode"
@@ -25,6 +23,7 @@ GLM_TOOL_RUNTIME="$GLM_RUNTIME_DIR/GLMQuotaSnapshotTool"
 ANTIGRAVITY_TOOL_RUNTIME="$ANTIGRAVITY_RUNTIME_DIR/AntigravityQuotaSnapshotTool"
 USAGE_TOOL_RUNTIME="$USAGE_RUNTIME_DIR/UsageQuotaSnapshotTool"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+RUNTIME_CONFIG_FILE="$HOME/Library/Application Support/CodeQuotaDial/runtime-config.json"
 CODEX_LABEL="local.codex-quota-dial.refresh"
 CLAUDE_LABEL="local.claude-quota-dial.refresh"
 GLM_LABEL="local.glm-quota-dial.refresh"
@@ -40,32 +39,28 @@ USER_GUI_DOMAIN="gui/$(id -u)"
 BUILD_VERSION="$(date +%Y%m%d%H%M%S)"
 MARKETING_VERSION_VALUE="1.0"
 
-detect_team_id_from_certificate() {
-  local team_id
-  team_id="$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*(\([A-Z0-9]\{10\}\))".*/\1/p' | head -n 1)"
-  if [[ -z "$team_id" ]]; then
-    team_id="$(security find-certificate -c "Apple Development" -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null | sed -n 's/.*OU=\([A-Z0-9]\{10\}\).*/\1/p' | head -n 1)"
-  fi
-  printf '%s\n' "$team_id"
-}
+# Every install setting is either a sensible constant default (below) or
+# auto-detected (signing — see resolve_signing), so the install needs no config
+# file at all. The rare override is passed as an
+# environment variable on the command line, e.g.:
+#   TEAM_ID=XXXXXXXXXX ./script/install.command          # pin one of several signing identities
+#   REFRESH_INTERVAL=60 ./script/install.command         # change the refresh cadence
+# The `:=` form below lets such env vars win while still defaulting when unset.
+: "${INSTALL_BASE:=/Applications}"
+: "${REFRESH_INTERVAL:=120}"
+: "${PATH_PREFIX:=$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin}"
 
-detect_signing_identity() {
-  local team_id="${1:-}"
-  local identity
-  if [[ -n "$team_id" ]]; then
-    identity="$(security find-identity -v -p codesigning 2>/dev/null | sed -n "s/.*\"\\(Apple Development: .*(${team_id})\\)\"/\\1/p" | head -n 1)"
-  fi
-  if [[ -z "$identity" ]]; then
-    identity="$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Apple Development: .*\)"/\1/p' | head -n 1)"
-  fi
-  if [[ -z "$identity" ]]; then
-    echo "Failed to detect an Apple Development signing identity. Open Xcode once, sign in with an Apple ID, then retry." >&2
-    exit 1
-  fi
-  printf '%s\n' "$identity"
+list_signing_identities() {
+  # The display names of every valid Apple Development identity in the keychain,
+  # one per line (e.g. "Apple Development: name (XXXXXXXXXX)").
+  security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/^[[:space:]]*[0-9][0-9]*)[[:space:]]*[0-9A-Fa-f]\{40\}[[:space:]]*"\(Apple Development: .*\)"$/\1/p'
 }
 
 detect_team_id_from_signature() {
+  # The 10-char Team ID, read from a real signature. This is authoritative: the
+  # parenthetical in the identity name is the *certificate* id, not the Team ID,
+  # so we sign a throwaway probe and read its TeamIdentifier instead.
   local signing_identity="$1"
   local probe_dir="$GENERATED_DIR/signing-probe"
   local probe="$probe_dir/probe"
@@ -73,7 +68,7 @@ detect_team_id_from_signature() {
 
   mkdir -p "$probe_dir"
   cp /usr/bin/true "$probe"
-  codesign --force --sign "$signing_identity" --timestamp=none "$probe" >/dev/null
+  codesign --force --sign "$signing_identity" --timestamp=none "$probe" >/dev/null 2>&1 || true
   team_id="$(installed_team_id "$probe")"
   rm -rf "$probe_dir"
 
@@ -85,82 +80,101 @@ installed_team_id() {
   codesign -dv --verbose=4 "$app_path" 2>&1 | sed -n 's/^TeamIdentifier=//p' | head -n 1
 }
 
-ensure_config() {
-  if [[ -f "$CONFIG_FILE" ]]; then
+resolve_signing() {
+  # SIGNING_IDENTITY, TEAM_ID and the five App Groups are fully derivable on a
+  # machine that can sign at all, so they are auto-detected on every run — no
+  # config file needed. The only ambiguity is a keychain with several Apple
+  # Development identities; there the user pins one by passing SIGNING_IDENTITY
+  # (or TEAM_ID) as an environment variable, which this honours as an override.
+  if [[ -z "${SIGNING_IDENTITY:-}" ]]; then
+    local -a identities
+    identities=("${(@f)$(list_signing_identities)}")
+    identities=("${(@)identities:#}")  # drop empties
+    if (( ${#identities} == 0 )); then
+      echo "未找到 Apple Development 签名身份。请先打开 Xcode 用 Apple ID 登录后重试。" >&2
+      exit 1
+    elif (( ${#identities} > 1 )); then
+      echo "检测到多个 Apple Development 签名身份，无法自动判断该用哪个：" >&2
+      printf '  - %s\n' "${identities[@]}" >&2
+      echo "请重新运行并指定其一，例如：" >&2
+      echo "  SIGNING_IDENTITY=\"${identities[1]}\" ./script/install.command" >&2
+      echo "（或改用 TEAM_ID=XXXXXXXXXX）" >&2
+      exit 1
+    fi
+    SIGNING_IDENTITY="${identities[1]}"
+  fi
+
+  if [[ -z "${TEAM_ID:-}" ]]; then
+    TEAM_ID="$(detect_team_id_from_signature "$SIGNING_IDENTITY")"
+  fi
+  if [[ -z "$TEAM_ID" ]]; then
+    echo "无法从签名证书推断 Team ID（签名探针失败）。请重新运行并指定 TEAM_ID=XXXXXXXXXX ./script/install.command" >&2
+    exit 1
+  fi
+
+  # App Groups are a naming convention keyed by Team ID — never user-facing.
+  : "${CODEX_APP_GROUP:="${TEAM_ID}.group.local.codex-token-monitor"}"
+  : "${CLAUDE_APP_GROUP:="${TEAM_ID}.group.local.claude-quota-monitor"}"
+  : "${GLM_APP_GROUP:="${TEAM_ID}.group.local.glm-quota-monitor"}"
+  : "${ANTIGRAVITY_APP_GROUP:="${TEAM_ID}.group.local.antigravity-quota-monitor"}"
+  : "${USAGE_APP_GROUP:="${TEAM_ID}.group.local.usage-quota-monitor"}"
+
+  echo "==> Using signing identity: $SIGNING_IDENTITY"
+  echo "==> Using Team ID: $TEAM_ID"
+}
+
+json_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '%s' "$value"
+}
+
+write_runtime_config() {
+  # Proxy and remote SSH hosts are runtime data the app edits live, so they live
+  # in this shared JSON file (read by both the app and the snapshot tools on
+  # every refresh) rather than baked into the binaries. Seed it on first install
+  # only — from the shell's proxy environment / any USAGE_REMOTE_HOST env var —
+  # and never clobber later in-app edits. Normally left empty and set in the app.
+  if [[ -f "$RUNTIME_CONFIG_FILE" ]]; then
+    echo "==> Keeping existing runtime config: $RUNTIME_CONFIG_FILE"
     return
   fi
 
-  local certificate_team_id
-  local team_id
-  local signing_identity
-  certificate_team_id="$(detect_team_id_from_certificate)"
-  signing_identity="$(detect_signing_identity "$certificate_team_id")"
-  team_id="$(detect_team_id_from_signature "$signing_identity")"
-  if [[ -z "$team_id" ]]; then
-    team_id="$certificate_team_id"
-  fi
-  if [[ -z "$team_id" ]]; then
-    echo "Failed to detect a Team ID from the signing certificate. Open Xcode once, sign in with an Apple ID, then retry." >&2
-    exit 1
-  fi
-  sed \
-    -e "s#__TEAM_ID__#$team_id#g" \
-    -e "s#__SIGNING_IDENTITY__#$signing_identity#g" \
-    "$CONFIG_TEMPLATE" > "$CONFIG_FILE"
-  echo "Created $CONFIG_FILE"
-}
+  echo "==> Seeding runtime config: $RUNTIME_CONFIG_FILE"
+  mkdir -p "$(dirname "$RUNTIME_CONFIG_FILE")"
 
-swift_proxy_literal() {
-  # The GUI app does not inherit the shell's proxy environment the way the
-  # launch agents do, so bake a single proxy URL into the generated config and
-  # pass it to curl via --proxy. Prefer HTTPS_PROXY: every quota endpoint is
-  # https, and that is the variable curl itself honours for the launch agents,
-  # so the app uses the exact same (CONNECT-tunnel) path that already works.
-  # Fall back to HTTP_PROXY, then ALL_PROXY. Empty config means a direct call.
+  # Prefer HTTPS_PROXY (every quota endpoint is https), then HTTP_PROXY, ALL_PROXY.
   local proxy="${HTTPS_PROXY:-${HTTP_PROXY:-${ALL_PROXY:-}}}"
-  if [[ -n "$proxy" ]]; then
-    local escaped="${proxy//\\/\\\\}"
-    escaped="${escaped//\"/\\\"}"
-    printf '"%s"' "$escaped"
-  else
-    printf 'nil'
-  fi
-}
 
-swift_usage_remote_literal() {
-  # SSH hosts for the Usage widget's multi-end aggregation, comma-separated. The
-  # GUI app does not inherit the shell env, so bake the hosts into the generated
-  # config as a Swift array. Empty config means local-only.
-  local raw="${USAGE_REMOTE_HOST:-}"
+  local hosts_json="" host
   local -a parts
-  parts=("${(@s:,:)raw}")
-  local out="" host escaped
+  parts=("${(@s:,:)${USAGE_REMOTE_HOST:-}}")
   for host in "${parts[@]}"; do
     host="${host// /}"
     [[ -z "$host" ]] && continue
-    escaped="${host//\\/\\\\}"
-    escaped="${escaped//\"/\\\"}"
-    if [[ -n "$out" ]]; then out+=", "; fi
-    out+="\"$escaped\""
+    if [[ -n "$hosts_json" ]]; then hosts_json+=", "; fi
+    hosts_json+="\"$(json_escape "$host")\""
   done
-  printf '[%s]' "$out"
+
+  cat > "$RUNTIME_CONFIG_FILE" <<EOF
+{
+  "proxyURL" : "$(json_escape "$proxy")",
+  "remoteHosts" : [$hosts_json]
+}
+EOF
 }
 
 write_coded_sources() {
-  local proxy_literal
-  proxy_literal="$(swift_proxy_literal)"
-  local usage_remote_literal
-  usage_remote_literal="$(swift_usage_remote_literal)"
-
+  # Only the app-group identifiers are signing-bound and therefore baked in here.
+  # Proxy and remote-host settings are pure runtime data that the app must be
+  # able to change without a rebuild, so they live in the shared runtime config
+  # (see write_runtime_config / RuntimeConfig.swift), not in generated sources.
   cat > "$PROJECT_ROOT/Sources/CodexQuotaCore/AppGroupConfig.generated.swift" <<EOF
 import Foundation
 
 public enum CodexQuotaAppGroup {
     public static let identifier = "$CODEX_APP_GROUP"
-}
-
-public enum CodexQuotaProxyConfig {
-    public static let proxyURL: String? = $proxy_literal
 }
 EOF
 
@@ -170,10 +184,6 @@ import Foundation
 public enum GLMQuotaAppGroup {
     public static let identifier = "$GLM_APP_GROUP"
 }
-
-public enum GLMQuotaProxyConfig {
-    public static let proxyURL: String? = $proxy_literal
-}
 EOF
 
   cat > "$PROJECT_ROOT/Sources/ClaudeQuotaCore/AppGroupConfig.generated.swift" <<EOF
@@ -181,10 +191,6 @@ import Foundation
 
 public enum ClaudeQuotaAppGroup {
     public static let identifier = "$CLAUDE_APP_GROUP"
-}
-
-public enum ClaudeQuotaProxyConfig {
-    public static let proxyURL: String? = $proxy_literal
 }
 EOF
 
@@ -201,11 +207,6 @@ import Foundation
 
 public enum UsageQuotaAppGroup {
     public static let identifier = "$USAGE_APP_GROUP"
-}
-
-public enum UsageRemoteConfig {
-    /// SSH hosts for joint multi-end statistics. Empty = local only.
-    public static let remoteHosts: [String] = $usage_remote_literal
 }
 EOF
 }
@@ -301,33 +302,9 @@ write_launch_agent() {
 		<string>$PATH_PREFIX:/usr/bin:/bin:/usr/sbin:/sbin</string>
 EOF
 
-  if [[ -n "${HTTP_PROXY:-}" ]]; then
-    cat >> "$plist_path" <<EOF
-		<key>HTTP_PROXY</key>
-		<string>$HTTP_PROXY</string>
-EOF
-  fi
-
-  if [[ -n "${HTTPS_PROXY:-}" ]]; then
-    cat >> "$plist_path" <<EOF
-		<key>HTTPS_PROXY</key>
-		<string>$HTTPS_PROXY</string>
-EOF
-  fi
-
-  if [[ -n "${ALL_PROXY:-}" ]]; then
-    cat >> "$plist_path" <<EOF
-		<key>ALL_PROXY</key>
-		<string>$ALL_PROXY</string>
-EOF
-  fi
-
-  if [[ -n "${NO_PROXY:-}" ]]; then
-    cat >> "$plist_path" <<EOF
-		<key>NO_PROXY</key>
-		<string>$NO_PROXY</string>
-EOF
-  fi
+  # Proxy is no longer injected via the launch agent environment: the snapshot
+  # tools read the proxy from the shared runtime config and pass it to curl via
+  # --proxy, so it can be changed in the app without rewriting these plists.
 
   cat >> "$plist_path" <<EOF
 	</dict>
@@ -340,23 +317,11 @@ EOF
 EOF
 }
 
-require_config() {
-  : "${TEAM_ID:?TEAM_ID is required}"
-  : "${SIGNING_IDENTITY:?SIGNING_IDENTITY is required}"
-  : "${CODEX_APP_GROUP:?CODEX_APP_GROUP is required}"
-  : "${CLAUDE_APP_GROUP:?CLAUDE_APP_GROUP is required}"
-  : "${GLM_APP_GROUP:?GLM_APP_GROUP is required}"
-  : "${ANTIGRAVITY_APP_GROUP:?ANTIGRAVITY_APP_GROUP is required}"
-  : "${USAGE_APP_GROUP:?USAGE_APP_GROUP is required}"
-  : "${INSTALL_BASE:?INSTALL_BASE is required}"
-  : "${REFRESH_INTERVAL:?REFRESH_INTERVAL is required}"
-  : "${PATH_PREFIX:?PATH_PREFIX is required}"
-}
-
 write_machine_specific_config() {
   echo "==> Writing machine-specific config"
   write_coded_sources
   write_entitlements
+  write_runtime_config
 }
 
 clear_build_cache() {
@@ -424,7 +389,7 @@ verify_installed_team_id() {
   signed_team_id="$(installed_team_id "$INSTALL_APP")"
   if [[ -n "$signed_team_id" && "$signed_team_id" != "$TEAM_ID" ]]; then
     echo "Installed app TeamIdentifier ($signed_team_id) does not match TEAM_ID ($TEAM_ID)." >&2
-    echo "Update $CONFIG_FILE so TEAM_ID matches the signing certificate, then rerun script/install.command." >&2
+    echo "Re-run with the matching identity, e.g. TEAM_ID=$signed_team_id ./script/install.command" >&2
     exit 1
   fi
 }
@@ -482,7 +447,7 @@ refresh_app_registration() {
 print_summary() {
   echo
   echo "Done."
-  echo "Config: $CONFIG_FILE"
+  echo "Runtime config (edit in-app): $RUNTIME_CONFIG_FILE"
   echo "App:    $INSTALL_APP"
   echo "Build:  $BUILD_VERSION"
   echo "Codex:  $CODEX_TOOL_RUNTIME"
@@ -493,12 +458,9 @@ print_summary() {
 }
 
 main() {
-  ensure_config
-  source "$CONFIG_FILE"
-  : "${CLAUDE_APP_GROUP:="${TEAM_ID}.group.local.claude-quota-monitor"}"
-  : "${ANTIGRAVITY_APP_GROUP:="${TEAM_ID}.group.local.antigravity-quota-monitor"}"
-  : "${USAGE_APP_GROUP:="${TEAM_ID}.group.local.usage-quota-monitor"}"
-  require_config
+  # No config file: defaults above cover a clean run, signing is auto-detected,
+  # and any rare override comes from the environment (e.g. TEAM_ID=...).
+  resolve_signing
 
   INSTALL_APP="$INSTALL_BASE/$APP_NAME.app"
 

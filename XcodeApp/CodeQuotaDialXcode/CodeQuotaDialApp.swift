@@ -5,8 +5,8 @@ struct CodeQuotaDialApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .frame(width: 580, height: 440)
+                .frame(minWidth: 760, idealWidth: 860, minHeight: 520, idealHeight: 600)
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
     }
 }

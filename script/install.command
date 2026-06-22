@@ -4,13 +4,10 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PA
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CONFIG_FILE="$PROJECT_ROOT/local-config.env"
 APP_NAME="CodeQuotaDialXcode"
-INSTALL_BASE="/Applications"
-
-if [[ -f "$CONFIG_FILE" ]]; then
-  source "$CONFIG_FILE"
-fi
+# No config file: install is zero-config. INSTALL_BASE can still be overridden
+# via the environment (e.g. INSTALL_BASE=~/Applications ./script/install.command).
+: "${INSTALL_BASE:=/Applications}"
 
 INSTALL_APP="$INSTALL_BASE/$APP_NAME.app"
 

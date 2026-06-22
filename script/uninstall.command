@@ -5,9 +5,9 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PA
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT_NAME="$(basename "$0")"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CONFIG_FILE="$PROJECT_ROOT/local-config.env"
 APP_NAME="CodeQuotaDialXcode"
-INSTALL_BASE="/Applications"
+: "${INSTALL_BASE:=/Applications}"
+RUNTIME_CONFIG_DIR="$HOME/Library/Application Support/CodeQuotaDial"
 WIDGET_EXTENSION_NAME="CodeQuotaDialWidgetExtension.appex"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 CODEX_LABEL="local.codex-quota-dial.refresh"
@@ -54,10 +54,6 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
-
-if [[ -f "$CONFIG_FILE" ]]; then
-  source "$CONFIG_FILE"
-fi
 
 INSTALL_APP="$INSTALL_BASE/$APP_NAME.app"
 
@@ -180,6 +176,7 @@ remove_path "$ANTIGRAVITY_PLIST"
 remove_path "$USAGE_PLIST"
 remove_group_containers
 remove_runtime_outputs
+remove_path "$RUNTIME_CONFIG_DIR"
 remove_path "$HOME/Library/Caches/com.apple.chrono"
 
 if [[ "$INCLUDE_PROJECT_BUILD" -eq 1 ]]; then

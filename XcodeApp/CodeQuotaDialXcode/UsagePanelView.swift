@@ -18,7 +18,9 @@ struct UsagePanelView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.spacing) {
-                header
+                if let badge = RemoteStatusBadge(sources: snapshot?.sources) {
+                    badge.font(.caption2.weight(.bold))
+                }
 
                 LaunchAgentToggleRow(controller: agent)
 
@@ -47,10 +49,20 @@ struct UsagePanelView: View {
                 WeekTrendChart(days: selectedScope?.weekDays ?? [])
 
                 ModelBreakdownCard(breakdowns: selectedScope?.breakdowns ?? [])
+
+                if let message = errorText ?? agent.lastError {
+                    InlineBanner(text: message)
+                }
             }
             .padding(Theme.contentPadding)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("消耗统计")
+        .navigationSubtitle(snapshot.map { "更新于 \(usageTimeFormatter.string(from: $0.generatedAt))" } ?? "未刷新")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                RefreshButton(isRefreshing: isRefreshing) { await refresh() }
+            }
+        }
         .onAppear {
             loadSnapshot()
             agent.refreshStatus()
@@ -83,44 +95,6 @@ struct UsagePanelView: View {
             return scope
         }
         return scopes.first
-    }
-
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("消耗统计")
-                .font(.title3.weight(.semibold))
-            if let badge = RemoteStatusBadge(sources: snapshot?.sources) {
-                badge.font(.caption2.weight(.bold))
-            }
-            Spacer(minLength: 8)
-            statusText
-            Button {
-                Task { await refresh() }
-            } label: {
-                if isRefreshing {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Text("刷新")
-                }
-            }
-            .disabled(isRefreshing)
-        }
-    }
-
-    @ViewBuilder private var statusText: some View {
-        if let message = errorText ?? agent.lastError {
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.orange)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(message)
-        } else {
-            Text(snapshot.map { "更新 \(usageTimeFormatter.string(from: $0.generatedAt))" } ?? "未刷新")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
     }
 
     private func loadSnapshot() {
@@ -268,6 +242,10 @@ private struct HeroTodayCard: View {
                         DeltaBadge(percent: deltaPercent)
                     }
                 }
+                Text("\(compactNumber(summary?.totalTokens)) tokens")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
             TokenValueRow(summary: summary)
         }
@@ -363,8 +341,11 @@ private struct WeekTrendChart: View {
     var days: [UsageDay]
 
     private var maxCost: Double { max(days.map(\.totalCost).max() ?? 0, 0.01) }
+    /// Average over elapsed days only (through today). Future days in the current
+    /// week are still zero, so including them would understate the daily average.
     private var average: Double {
-        days.isEmpty ? 0 : days.map(\.totalCost).reduce(0, +) / Double(days.count)
+        let elapsed = days.filter { $0.period <= todayPeriod }
+        return elapsed.isEmpty ? 0 : elapsed.map(\.totalCost).reduce(0, +) / Double(elapsed.count)
     }
     private var todayPeriod: String { usageDayFormatter.string(from: Date()) }
 
