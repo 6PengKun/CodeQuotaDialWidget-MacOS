@@ -2,6 +2,7 @@ import CodexQuotaDialWidget
 import AntigravityQuotaDialWidget
 import ClaudeQuotaDialWidget
 import GLMQuotaDialWidget
+import UsageQuotaDialWidget
 import SwiftUI
 import WidgetKit
 
@@ -12,5 +13,6 @@ struct CodeQuotaDialWidgetBundle: WidgetBundle {
         ClaudeQuotaDialWidget()
         GLMQuotaDialWidget()
         AntigravityQuotaDialWidget()
+        UsageQuotaDialWidget()
     }
 }
