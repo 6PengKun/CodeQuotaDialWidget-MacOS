@@ -28,3 +28,29 @@ public enum UsageRemoteConfig {
             .filter { !$0.isEmpty }
     }
 }
+
+public enum UsageZCodeConfig {
+    /// Local-only extension for ZCode usage. Missing config defaults to enabled
+    /// so an existing local ZCode install appears automatically.
+    public static var enabled: Bool {
+        guard let value = QuotaRuntimeConfigFile.object()["zcodeUsageEnabled"] else { return true }
+        if let bool = value as? Bool { return bool }
+        if let string = value as? String {
+            switch string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "1", "true", "yes", "enabled": return true
+            case "0", "false", "no", "disabled": return false
+            default: return true
+            }
+        }
+        return true
+    }
+}
+
+public enum UsageProxyConfig {
+    /// Proxy URL passed to curl for optional online model pricing refresh.
+    public static var proxyURL: String? {
+        guard let value = QuotaRuntimeConfigFile.object()["proxyURL"] as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}

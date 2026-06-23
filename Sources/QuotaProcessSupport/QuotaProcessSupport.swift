@@ -97,11 +97,39 @@ public struct QuotaProcessResult: Sendable {
 }
 
 public enum QuotaProcessSupport {
+    /// Environment for child processes: the parent's env with a PATH that
+    /// prepends the same node/npm/ccusage dirs the LaunchAgent plist already
+    /// sets. GUI hosts (the Xcode app) inherit a minimal system PATH
+    /// (`/usr/bin:/bin:/usr/sbin:/sbin`) that omits Homebrew and user-local
+    /// dirs, so `#!/usr/bin/env node` scripts like npx fail even though npx
+    /// itself was located. Prepending the baseline fixes that everywhere we
+    /// spawn. Under the LaunchAgent the PATH is already full, so this is
+    /// additive (dedup, no behavior change).
+    public static func mergedEnvironment() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        // Keep this list in sync with the PATH in local.*-quota-dial.refresh.plist.
+        let baseline = [
+            "\(home)/.local/bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin", "/bin", "/usr/sbin", "/sbin"
+        ]
+        let inherited = env["PATH"]?.split(separator: ":").map(String.init) ?? []
+        var seen = Set<String>()
+        let deduped = (baseline + inherited).filter { !$0.isEmpty && seen.insert($0).inserted }
+        env["PATH"] = deduped.joined(separator: ":")
+        return env
+    }
+
     public static func run(_ process: Process) throws -> QuotaProcessResult {
         let outputPipe = (process.standardOutput as? Pipe) ?? Pipe()
         let errorPipe = (process.standardError as? Pipe) ?? Pipe()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
+        if process.environment == nil {
+            process.environment = Self.mergedEnvironment()
+        }
         let outputBox = DataBox()
         let errorBox = DataBox()
         let readGroup = DispatchGroup()
@@ -128,6 +156,7 @@ public enum QuotaProcessSupport {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        process.environment = Self.mergedEnvironment()
         process.standardInput = FileHandle.nullDevice
 
         let outputPipe = Pipe()

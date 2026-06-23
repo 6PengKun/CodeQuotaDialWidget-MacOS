@@ -12,8 +12,9 @@ struct RuntimeConfig: Equatable {
     var proxyURL: String
     var remoteHosts: [String]
     var glmApiKey: String
+    var zcodeUsageEnabled: Bool
 
-    static let empty = RuntimeConfig(proxyURL: "", remoteHosts: [], glmApiKey: "")
+    static let empty = RuntimeConfig(proxyURL: "", remoteHosts: [], glmApiKey: "", zcodeUsageEnabled: true)
 }
 
 enum RuntimeConfigStore {
@@ -32,7 +33,13 @@ enum RuntimeConfigStore {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty } ?? []
         let glmApiKey = ((object["glmApiKey"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
-        return RuntimeConfig(proxyURL: proxy, remoteHosts: hosts, glmApiKey: glmApiKey)
+        let zcodeUsageEnabled = (object["zcodeUsageEnabled"] as? Bool) ?? true
+        return RuntimeConfig(
+            proxyURL: proxy,
+            remoteHosts: hosts,
+            glmApiKey: glmApiKey,
+            zcodeUsageEnabled: zcodeUsageEnabled
+        )
     }
 
     static func save(_ config: RuntimeConfig) throws {
@@ -41,7 +48,8 @@ enum RuntimeConfigStore {
             "remoteHosts": config.remoteHosts
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty },
-            "glmApiKey": config.glmApiKey.trimmingCharacters(in: .whitespaces)
+            "glmApiKey": config.glmApiKey.trimmingCharacters(in: .whitespaces),
+            "zcodeUsageEnabled": config.zcodeUsageEnabled
         ]
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),

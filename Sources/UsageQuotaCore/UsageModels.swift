@@ -15,6 +15,7 @@ public struct UsageSnapshot: Codable, Equatable, Sendable {
     /// Per-end breakdown (本机 + each reachable remote) for the app's "按端查看".
     /// Empty in local-only mode. The widget ignores this.
     public var ends: [UsageAgentSnapshot]
+    public var modelPrices: [UsageModelPriceRecord]
     public var error: String?
 
     public init(
@@ -30,6 +31,7 @@ public struct UsageSnapshot: Codable, Equatable, Sendable {
         hosts: [UsageHostSnapshot] = [],
         agents: [UsageAgentSnapshot] = [],
         ends: [UsageAgentSnapshot] = [],
+        modelPrices: [UsageModelPriceRecord] = [],
         error: String? = nil
     ) {
         self.generatedAt = generatedAt
@@ -44,6 +46,7 @@ public struct UsageSnapshot: Codable, Equatable, Sendable {
         self.hosts = hosts
         self.agents = agents
         self.ends = ends
+        self.modelPrices = modelPrices
         self.error = error
     }
 }
@@ -62,6 +65,7 @@ extension UsageSnapshot {
         case hosts
         case agents
         case ends
+        case modelPrices
         case error
     }
 
@@ -79,6 +83,7 @@ extension UsageSnapshot {
         hosts = try container.decodeIfPresent([UsageHostSnapshot].self, forKey: .hosts) ?? []
         agents = try container.decodeIfPresent([UsageAgentSnapshot].self, forKey: .agents) ?? []
         ends = try container.decodeIfPresent([UsageAgentSnapshot].self, forKey: .ends) ?? []
+        modelPrices = try container.decodeIfPresent([UsageModelPriceRecord].self, forKey: .modelPrices) ?? []
         error = try container.decodeIfPresent(String.self, forKey: .error)
     }
 
@@ -96,7 +101,70 @@ extension UsageSnapshot {
         try container.encode(hosts, forKey: .hosts)
         try container.encode(agents, forKey: .agents)
         try container.encode(ends, forKey: .ends)
+        try container.encode(modelPrices, forKey: .modelPrices)
         try container.encodeIfPresent(error, forKey: .error)
+    }
+}
+
+public enum UsageModelPriceSource: String, Codable, Equatable, Sendable {
+    case zaiOfficial
+    case zaiCache
+    case builtinFallback
+    case ccusageReport
+}
+
+public enum UsageModelUnitPriceSource: String, Codable, Equatable, Sendable {
+    case zaiOfficial
+    case zaiCache
+    case builtinFallback
+    case litellmCache
+}
+
+public struct UsageModelPriceRecord: Codable, Equatable, Sendable, Identifiable {
+    public var modelName: String
+    public var source: UsageModelPriceSource
+    public var fetchedAt: Date?
+    public var unitPriceSource: UsageModelUnitPriceSource?
+    public var unitPriceFetchedAt: Date?
+    public var inputCostPerMTokUSD: Double?
+    public var outputCostPerMTokUSD: Double?
+    public var cacheCreationCostPerMTokUSD: Double?
+    public var cacheReadCostPerMTokUSD: Double?
+    public var effectiveCostPerMTokUSD: Double?
+    public var totalTokens: Int
+    public var totalCost: Double
+    public var agents: [String]
+
+    public var id: String { "\(source.rawValue):\(modelName)" }
+
+    public init(
+        modelName: String,
+        source: UsageModelPriceSource,
+        fetchedAt: Date? = nil,
+        unitPriceSource: UsageModelUnitPriceSource? = nil,
+        unitPriceFetchedAt: Date? = nil,
+        inputCostPerMTokUSD: Double? = nil,
+        outputCostPerMTokUSD: Double? = nil,
+        cacheCreationCostPerMTokUSD: Double? = nil,
+        cacheReadCostPerMTokUSD: Double? = nil,
+        effectiveCostPerMTokUSD: Double? = nil,
+        totalTokens: Int = 0,
+        totalCost: Double = 0,
+        agents: [String] = []
+    ) {
+        self.modelName = modelName
+        self.source = source
+        self.fetchedAt = fetchedAt
+        self.unitPriceSource = unitPriceSource
+        self.unitPriceFetchedAt = unitPriceFetchedAt
+        self.inputCostPerMTokUSD = inputCostPerMTokUSD
+        self.outputCostPerMTokUSD = outputCostPerMTokUSD
+        self.cacheCreationCostPerMTokUSD = cacheCreationCostPerMTokUSD
+        self.cacheReadCostPerMTokUSD = cacheReadCostPerMTokUSD
+        self.effectiveCostPerMTokUSD = effectiveCostPerMTokUSD
+        self.totalTokens = totalTokens
+        self.totalCost = totalCost
+        self.agents = agents
     }
 }
 
@@ -271,12 +339,21 @@ public struct UsageSources: Codable, Equatable, Sendable {
     public var remoteHosts: [String]
     /// The subset of `remoteHosts` that responded and were merged in.
     public var reachableHosts: [String]
+    /// Local-only extension sources merged outside ccusage, e.g. ZCode.
+    public var localExtensions: [String]
     public var agents: [String]
 
-    public init(localReachable: Bool = true, remoteHosts: [String] = [], reachableHosts: [String] = [], agents: [String] = []) {
+    public init(
+        localReachable: Bool = true,
+        remoteHosts: [String] = [],
+        reachableHosts: [String] = [],
+        localExtensions: [String] = [],
+        agents: [String] = []
+    ) {
         self.localReachable = localReachable
         self.remoteHosts = remoteHosts
         self.reachableHosts = reachableHosts
+        self.localExtensions = localExtensions
         self.agents = agents
     }
 
@@ -295,12 +372,15 @@ public struct UsageSources: Codable, Equatable, Sendable {
     }
 
     public var statusLabel: String? {
+        let localParts = (localReachable ? ["本地"] : []) + localExtensions.map(Self.displayName)
+        let localLabel = localParts.isEmpty ? nil : localParts.joined(separator: "+")
+
         if remoteHosts.isEmpty {
-            return localReachable ? "本地" : "无来源"
+            return localLabel ?? "无来源"
         }
 
         let remoteLabel = "多端(\(reachableHosts.count)/\(remoteHosts.count))"
-        return localReachable ? "本地+\(remoteLabel)" : remoteLabel
+        return localLabel.map { "\($0)+\(remoteLabel)" } ?? remoteLabel
     }
 
     public var hasMissingSources: Bool {
@@ -308,13 +388,14 @@ public struct UsageSources: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case localReachable, remoteHosts, reachableHosts, agents
+        case localReachable, remoteHosts, reachableHosts, localExtensions, agents
         case remoteHost, remoteReachable  // legacy single-host snapshots
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         localReachable = try container.decodeIfPresent(Bool.self, forKey: .localReachable) ?? true
+        localExtensions = try container.decodeIfPresent([String].self, forKey: .localExtensions) ?? []
         agents = try container.decodeIfPresent([String].self, forKey: .agents) ?? []
         if let hosts = try container.decodeIfPresent([String].self, forKey: .remoteHosts) {
             remoteHosts = hosts
@@ -333,6 +414,14 @@ public struct UsageSources: Codable, Equatable, Sendable {
         try container.encode(localReachable, forKey: .localReachable)
         try container.encode(remoteHosts, forKey: .remoteHosts)
         try container.encode(reachableHosts, forKey: .reachableHosts)
+        try container.encode(localExtensions, forKey: .localExtensions)
         try container.encode(agents, forKey: .agents)
+    }
+
+    private static func displayName(_ source: String) -> String {
+        switch source.lowercased() {
+        case "zcode": return "ZCode"
+        default: return source
+        }
     }
 }

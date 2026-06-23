@@ -424,6 +424,7 @@ private struct ModelBreakdownCard: View {
         case today = "今日"
         case week = "本周"
         case month = "本月"
+        case total = "总计"
 
         var id: String { rawValue }
 
@@ -432,6 +433,7 @@ private struct ModelBreakdownCard: View {
             case .today: return "today-models"
             case .week: return "week-models"
             case .month: return "month-models"
+            case .total: return "total-models"
             }
         }
     }

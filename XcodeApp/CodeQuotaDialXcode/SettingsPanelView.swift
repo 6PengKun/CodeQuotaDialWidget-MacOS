@@ -7,6 +7,7 @@ import SwiftUI
 struct SettingsPanelView: View {
     @State private var proxyURL = ""
     @State private var remoteHostsText = ""
+    @State private var zcodeUsageEnabled = true
     @State private var savedConfig = RuntimeConfig.empty
     @State private var statusText: String?
     @State private var isError = false
@@ -16,6 +17,7 @@ struct SettingsPanelView: View {
             VStack(alignment: .leading, spacing: Theme.spacing) {
                 proxyCard
                 remoteCard
+                zcodeCard
 
                 HStack(spacing: 10) {
                     Button("保存") { save() }
@@ -78,13 +80,28 @@ struct SettingsPanelView: View {
         .cardSurface()
     }
 
+    private var zcodeCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: $zcodeUsageEnabled) {
+                Label("ZCode 用量扩展", systemImage: "bolt.horizontal.circle")
+                    .font(.callout.weight(.semibold))
+            }
+            Text("开启后读取本机 ~/.zcode/cli/db/db.sqlite，并作为 ZCode Agent 合并到“消耗”统计。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .cardSurface()
+    }
+
     private var editedConfig: RuntimeConfig {
         // glmApiKey is owned by the GLM panel; carry the saved value through
         // untouched so saving proxy/hosts here never wipes it.
         RuntimeConfig(
             proxyURL: proxyURL.trimmingCharacters(in: .whitespaces),
             remoteHosts: parseHosts(remoteHostsText),
-            glmApiKey: savedConfig.glmApiKey
+            glmApiKey: savedConfig.glmApiKey,
+            zcodeUsageEnabled: zcodeUsageEnabled
         )
     }
 
@@ -95,6 +112,7 @@ struct SettingsPanelView: View {
         savedConfig = config
         proxyURL = config.proxyURL
         remoteHostsText = config.remoteHosts.joined(separator: "\n")
+        zcodeUsageEnabled = config.zcodeUsageEnabled
         statusText = nil
         isError = false
     }
@@ -107,6 +125,7 @@ struct SettingsPanelView: View {
             // Reflect the normalized values back (trimmed proxy, cleaned hosts).
             proxyURL = config.proxyURL
             remoteHostsText = config.remoteHosts.joined(separator: "\n")
+            zcodeUsageEnabled = config.zcodeUsageEnabled
             statusText = "已保存"
             isError = false
         } catch {

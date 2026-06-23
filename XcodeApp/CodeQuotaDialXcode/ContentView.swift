@@ -24,6 +24,7 @@ struct ContentView: View {
 
             Section("用量统计") {
                 sidebarRow(.usage).tag(DashboardSection.usage)
+                sidebarRow(.modelPrices).tag(DashboardSection.modelPrices)
             }
 
             Section("其他") {
@@ -66,6 +67,7 @@ struct ContentView: View {
         case .glm:         GLMQuotaPanelView()
         case .antigravity: AntigravityQuotaPanelView()
         case .usage:       UsagePanelView()
+        case .modelPrices: ModelPricesPanelView()
         case .settings:    SettingsPanelView()
         }
     }
@@ -98,6 +100,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     case glm
     case antigravity
     case usage
+    case modelPrices
     case settings
 
     var id: String { rawValue }
@@ -111,6 +114,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .glm:         return "GLM"
         case .antigravity: return "Antigravity"
         case .usage:       return "消耗统计"
+        case .modelPrices: return "模型价格"
         case .settings:    return "设置"
         }
     }
@@ -120,7 +124,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     var iconAsset: String? {
         switch self {
         case .codex, .claude, .glm, .antigravity: return rawValue
-        case .usage, .settings: return nil
+        case .usage, .modelPrices, .settings: return nil
         }
     }
 
@@ -132,6 +136,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .glm:         return "cube"
         case .antigravity: return "bolt.fill"
         case .usage:       return "chart.bar.xaxis"
+        case .modelPrices: return "tag"
         case .settings:    return "gearshape"
         }
     }
@@ -143,6 +148,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .glm:         return .blue
         case .antigravity: return .purple
         case .usage:       return .green
+        case .modelPrices: return .mint
         case .settings:    return .gray
         }
     }

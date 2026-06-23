@@ -1,6 +1,6 @@
 # Code Quota Dial Widget
 
-> 将 **Codex**、**Claude Code**、**GLM（智谱）** 和 **Antigravity** 的额度做成 macOS 桌面组件，支持本地、多端用量联合统计，随时一眼掌握用量。
+> 将 **Codex**、**Claude Code**、**GLM（智谱）** 和 **Antigravity** 的额度做成 macOS 桌面组件，支持本地（含 ZCode CLI）、多端用量联合统计，随时一眼掌握用量。
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="platform" />
@@ -39,7 +39,8 @@
 ## 功能特性
 
 - 📊 在 macOS 桌面以表盘组件实时展示 Codex / Claude Code / GLM / Antigravity 额度。
-- 📈 额外提供 **消耗统计** 仪表盘组件，基于官方 `ccusage` 展示今日 / 本周 / 本月 / 总计的 token 与费用，支持多端（本机 + 远端 SSH）聚合。
+- 📈 额外提供 **消耗统计** 仪表盘组件，基于官方 `ccusage` 展示今日 / 本周 / 本月 / 总计的 token 与费用，支持多端（本机 + 远端 SSH）聚合；本机 **ZCode CLI** 的使用记录也会自动并入统计。
+- 💰 内置 **模型价格** 页面，可查看各模型的输入 / 缓存 / 输出单价明细与总花费，价格取自公共价格表并按日缓存（离线时回落到缓存或内置价）。
 - ⚙️ 完全零配置安装：签名身份 / Team ID / App Group 自动检测，无需手改 Swift、entitlements、`pbxproj` 或任何配置文件。
 - 🎛️ 代理与远端 SSH 主机在 app 的「设置」标签页里随时修改，保存即生效，**无需重新安装**。
 - 🔁 通过 `LaunchAgent` 定时抓取额度并自动刷新组件。
@@ -160,7 +161,8 @@ cd CodeQuotaDialWidget
 `/Applications/CodeQuotaDialXcode.app`（安装后会自动打开，也可从启动台/聚焦搜索打开）。左侧边栏切换页面：
 
 - **Codex / Claude / GLM / Antigravity**：各自的额度页，展示剩余百分比、重置时间等额度卡片。
-- **消耗统计**：基于 `ccusage` 的今日 / 本周 / 本月 / 总计 token 与费用、本周趋势、模型分布。
+- **消耗统计**：基于 `ccusage` 的今日 / 本周 / 本月 / 总计 token 与费用、本周趋势、模型分布；本机 **ZCode CLI** 的使用记录会自动并入统计，无需额外配置。
+- **模型价格**：展示各模型的输入 / 缓存 / 输出单价明细与总花费，相当于消耗统计背后费用折算的价格明细表。
 - **设置**：代理与远端 SSH 主机。
 
 每个额度页右上角有**刷新**按钮（立即拉一次），页内还有**后台自动刷新**开关。
@@ -170,6 +172,7 @@ cd CodeQuotaDialWidget
 - **GLM**：进 **GLM 页面**，在「API Key」卡片粘贴你的 GLM API Key 后保存（粘贴时可见，保存后隐藏）。
 - **代理**（如果你的网络访问 Codex/Claude 接口需要代理）：进 **设置** 页填 `http://127.0.0.1:端口`，保存后回各页点刷新即可生效。
 - **远端多端统计**（可选）：进 **设置** 页，在「远端 SSH 主机」每行填一个 host（需免密 SSH 且远端自带 `ccusage`）。
+- **ZCode 用量**（可选）：默认开启，会自动读取本机 ZCode CLI 的使用记录并并入「消耗统计」，无需任何配置；若你不使用，可在 **设置** 页关闭「ZCode 用量扩展」。
 
 ### 3. 添加桌面组件
 
@@ -204,11 +207,13 @@ LaunchAgent
 
 ```text
 本机:    npx ccusage@latest daily --json    ─┐
+本机:    ZCode CLI 本地使用记录              ─┤
 远端 1:  ssh <host1> ccusage daily --json   ─┤
 远端 N:  ssh <hostN> ccusage daily --json   ─┴─► 按日合并 ─► 本地推导 周/月/总/趋势/模型分布
 ```
 
 - 周/月/总等都由**一次** `daily` 调用在本地求和得到（不再分别请求），本机与所有远端并发执行。
+- 本机 **ZCode CLI** 的使用记录也会被自动读取并并入本机统计（默认开启，无需登录/API Key；若不使用可在「设置」关闭「ZCode 用量扩展」）。
 - 远端为**可选**：在 app 内「设置」标签页填远端 SSH 主机（每行一个，可多个），每个并发尝试、**只合并连得上的**。要求远端机器**自带 `ccusage`** 且本机到远端**免密 SSH**（key 在 `~/.ssh`、host 已在 `known_hosts`）。留空则仅统计本机。
 - 任何失败来源都会被自动跳过，只展示已成功合并的来源，并在 app/组件上显式标识：
   - 仅本地成功 → `本地`
@@ -216,6 +221,7 @@ LaunchAgent
   - 本地失败但远端有成功 → `多端(n/m)`（橙色）
   - 没有可用来源 → `无来源`（橙色）
 - 本机通过使用 `npx ccusage@latest` 在线获取，无需下载。
+- **费用来源**：费用按各模型的单价 × token 折算，单价明细见「模型价格」页。其中 ZCode 相关模型的单价取自 z.ai 官网，每日联网更新一次，离线时回落到缓存或内置价；其余模型单价取自公共价格表，同样按日缓存。
 
 ## 项目结构
 

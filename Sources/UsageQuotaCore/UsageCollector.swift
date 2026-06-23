@@ -15,13 +15,9 @@ import QuotaProcessSupport
 public struct UsageCollector: Sendable {
     public init() {}
 
-    /// How ccusage should price token usage. The slow part of a refresh is not
-    /// parsing the JSONL logs (~2s) but ccusage fetching live model pricing over
-    /// the network (~10s extra). `--offline` uses the bundled pricing snapshot
-    /// instead, which is exact for mainstream models but reports $0 for models
-    /// missing from the snapshot (e.g. GLM/DeepSeek/MiMo). `.auto` therefore runs
-    /// online at most once per calendar day to refresh those prices, and offline
-    /// the rest of the time.
+    /// How ccusage should price token usage. `.auto` runs ccusage online every
+    /// refresh because ccusage's embedded pricing can miss or misprice local
+    /// models; `.offline` is kept only as an explicit manual fast path.
     public enum PricingMode: Sendable {
         case auto
         case online
@@ -29,10 +25,12 @@ public struct UsageCollector: Sendable {
     }
 
     public func collect(now: Date = Date(), calendar: Calendar = .current, mode: PricingMode = .auto) -> UsageSnapshot {
-        let offline = Self.resolveOffline(mode: mode, now: now, calendar: calendar)
+        let offline = Self.shouldRunCcusageOffline(mode: mode)
         let pricingArgs = offline ? ["--offline"] : []
         let hosts = UsageRemoteConfig.remoteHosts
         let remoteEndpoints = hosts.map { Endpoint.remote($0) }
+        let zcodeTask = Self.startZCodeCollection(now: now, calendar: calendar, mode: mode)
+        let litellmTask = Self.startLiteLLMCatalog(now: now, calendar: calendar, mode: mode)
 
         // Wave 1: combined `daily --json` on local + every configured remote,
         // concurrently. Only the remotes that respond get merged in.
@@ -64,6 +62,39 @@ public struct UsageCollector: Sendable {
                 reachableHosts.append(host)
             }
         }
+        let ccusageModelPrices = Self.ccusageModelPriceRecords(
+            from: hostRows,
+            fetchedAt: now,
+            unitPrices: litellmTask.wait()
+        )
+
+        // Wave 2: per-agent `<agent> daily --json`. Only hit the remotes whose
+        // combined call succeeded — the rest would just fail again.
+        var agentRowsByHostID: [String: [String: [DailyRow]]] = [:]
+        if !hostRows.isEmpty {
+            let jobs = zip(hostRows, endpoints).flatMap { host, endpoint in
+                host.agentIDs.map { AgentJob(hostID: host.id, endpoint: endpoint, agent: $0) }
+            }
+            let wave2 = Self.runCommands(jobs.map { ($0.endpoint, [$0.agent, "daily", "--json"] + pricingArgs) })
+
+            for (index, job) in jobs.enumerated() {
+                if let output = wave2[index].output, let rows = try? Self.parseAgent(output, agent: job.agent), !rows.isEmpty {
+                    agentRowsByHostID[job.hostID, default: [:]][job.agent] = rows
+                }
+            }
+        }
+
+        let zcodeResult = zcodeTask.wait()
+        let zcodeRows = zcodeResult.rows
+        let localExtensions = zcodeRows.isEmpty ? [] : [ZCodeUsageCollector.agentName]
+        if !zcodeRows.isEmpty {
+            if let localIndex = hostRows.firstIndex(where: { $0.id == "host:local" }) {
+                hostRows[localIndex].rows = Self.mergeRows([hostRows[localIndex].rows, zcodeRows])
+            } else {
+                hostRows.insert(HostRows(id: "host:local", name: "本机", rows: zcodeRows), at: 0)
+            }
+            agentRowsByHostID["host:local", default: [:]][ZCodeUsageCollector.agentName] = zcodeRows
+        }
 
         guard !hostRows.isEmpty else {
             let reason = localError.isEmpty ? "所有 ccusage 来源均不可用" : localError
@@ -74,26 +105,6 @@ public struct UsageCollector: Sendable {
             )
         }
 
-        // Wave 2: per-agent `<agent> daily --json`. Only hit the remotes whose
-        // combined call succeeded — the rest would just fail again.
-        let jobs = zip(hostRows, endpoints).flatMap { host, endpoint in
-            host.agentIDs.map { AgentJob(hostID: host.id, endpoint: endpoint, agent: $0) }
-        }
-        let wave2 = Self.runCommands(jobs.map { ($0.endpoint, [$0.agent, "daily", "--json"] + pricingArgs) })
-
-        var agentRowsByHostID: [String: [String: [DailyRow]]] = [:]
-        for (index, job) in jobs.enumerated() {
-            if let output = wave2[index].output, let rows = try? Self.parseAgent(output, agent: job.agent), !rows.isEmpty {
-                agentRowsByHostID[job.hostID, default: [:]][job.agent] = rows
-            }
-        }
-
-        // A successful online run has just refreshed ccusage's live pricing, so
-        // record the day; `.auto` stays offline until the next calendar day.
-        if !offline {
-            Self.stampOnlineRefresh(now: now, calendar: calendar)
-        }
-
         return Self.snapshot(
             generatedAt: now,
             calendar: calendar,
@@ -101,24 +112,23 @@ public struct UsageCollector: Sendable {
             remoteHosts: hosts,
             reachableHosts: reachableHosts,
             hostRows: hostRows,
-            agentRowsByHostID: agentRowsByHostID
+            agentRowsByHostID: agentRowsByHostID,
+            localExtensions: localExtensions,
+            modelPrices: Self.mergeModelPriceRecords(ccusageModelPrices + zcodeResult.modelPrices)
         )
     }
 
-    // MARK: - Pricing freshness (`.auto`)
+    // MARK: - Pricing mode
 
-    /// `.auto` runs online when no online refresh has succeeded yet today, so the
-    /// bundled-pricing gaps (third-party models priced at $0 offline) are filled
-    /// in at most once per day; otherwise it stays on the fast offline path.
-    static func resolveOffline(mode: PricingMode, now: Date, calendar: Calendar) -> Bool {
-        let lastOnlineDay = (try? String(contentsOf: pricingMarkerURL(), encoding: .utf8))?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return shouldRunOffline(mode: mode, lastOnlineDay: lastOnlineDay, now: now, calendar: calendar)
+    static func shouldRunCcusageOffline(mode: PricingMode) -> Bool {
+        switch mode {
+        case .offline: return true
+        case .online, .auto: return false
+        }
     }
 
-    /// Pure pricing-mode decision: offline unless an online refresh is due. In
-    /// `.auto`, online is due when no online run has succeeded on the current
-    /// calendar day yet (no marker, or a marker from an earlier day).
+    /// Daily online refresh policy for extension pricing sources such as ZCode.
+    /// ccusage does not use this helper: it runs online for every `.auto` refresh.
     static func shouldRunOffline(mode: PricingMode, lastOnlineDay: String?, now: Date, calendar: Calendar) -> Bool {
         switch mode {
         case .offline: return true
@@ -129,19 +139,32 @@ public struct UsageCollector: Sendable {
         }
     }
 
-    private static func stampOnlineRefresh(now: Date, calendar: Calendar) {
-        let url = pricingMarkerURL()
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try? dateKey(now, calendar: calendar).write(to: url, atomically: true, encoding: .utf8)
+    private static func startZCodeCollection(now: Date, calendar: Calendar, mode: PricingMode) -> ZCodeTask {
+        guard UsageZCodeConfig.enabled else { return ZCodeTask.empty }
+
+        let result = Box<ZCodeUsageCollector.Result?>(nil)
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "usage.zcode.collect", qos: .utility)
+        group.enter()
+        queue.async {
+            let collected = (try? ZCodeUsageCollector().collect(now: now, calendar: calendar, mode: mode)) ?? ZCodeUsageCollector.Result()
+            result.withLock { $0 = collected }
+            group.leave()
+        }
+        return ZCodeTask(group: group, result: result)
     }
 
-    private static func pricingMarkerURL() -> URL {
-        UsageSnapshotStore.defaultURL()
-            .deletingLastPathComponent()
-            .appendingPathComponent("usage_pricing_refresh")
+    private static func startLiteLLMCatalog(now: Date, calendar: Calendar, mode: PricingMode) -> CatalogTask {
+        let result = Box<LiteLLMPricingCatalog?>(nil)
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "usage.litellm.pricing", qos: .utility)
+        group.enter()
+        queue.async {
+            let catalog = LiteLLMPricingResolver().catalog(mode: mode, now: now, calendar: calendar)
+            result.withLock { $0 = catalog }
+            group.leave()
+        }
+        return CatalogTask(group: group, result: result)
     }
 
     static func snapshot(
@@ -151,7 +174,9 @@ public struct UsageCollector: Sendable {
         remoteHosts: [String],
         reachableHosts: [String],
         hostRows: [HostRows],
-        agentRowsByHostID: [String: [String: [DailyRow]]]
+        agentRowsByHostID: [String: [String: [DailyRow]]],
+        localExtensions: [String] = [],
+        modelPrices: [UsageModelPriceRecord] = []
     ) -> UsageSnapshot {
         let overviewRows = Self.mergeRows(hostRows.map(\.rows))
         let hosts = hostRows.map { host in
@@ -188,11 +213,13 @@ public struct UsageCollector: Sendable {
                 localReachable: localReachable,
                 remoteHosts: remoteHosts,
                 reachableHosts: reachableHosts,
+                localExtensions: localExtensions,
                 agents: agents.map(\.name)
             ),
             hosts: hosts,
             agents: agents,
-            ends: ends
+            ends: ends,
+            modelPrices: modelPrices
         )
     }
 
@@ -278,7 +305,7 @@ public struct UsageCollector: Sendable {
         calendar: Calendar
     ) -> UsageAgentSnapshot {
         let weekKeys = currentWeekKeys(now: now, calendar: calendar)
-        let breakdowns = ["today-models", "week-models", "month-models"].map { suffix in
+        let breakdowns = ["today-models", "week-models", "month-models", "total-models"].map { suffix in
             let items = mergeBreakdownItems(snapshots.flatMap { snapshot in
                 snapshot.breakdowns.first { $0.id.hasSuffix(suffix) }?.items ?? []
             })
@@ -332,11 +359,116 @@ public struct UsageCollector: Sendable {
         }
     }
 
+    static func ccusageModelPriceRecords(
+        from hostRows: [HostRows],
+        fetchedAt: Date,
+        unitPrices: LiteLLMPricingCatalog? = nil
+    ) -> [UsageModelPriceRecord] {
+        struct Accumulator {
+            var summary = UsageSummary()
+            var agents = Set<String>()
+        }
+
+        var grouped: [String: Accumulator] = [:]
+        for host in hostRows {
+            for row in host.rows {
+                for (model, summary) in row.models {
+                    var accumulator = grouped[model] ?? Accumulator()
+                    accumulator.summary = accumulator.summary + summary
+                    accumulator.agents.formUnion(row.agents)
+                    grouped[model] = accumulator
+                }
+            }
+        }
+
+        return grouped.map { model, accumulator in
+            let unitPrice = unitPrices?.entry(for: model)
+            return UsageModelPriceRecord(
+                modelName: model,
+                source: .ccusageReport,
+                fetchedAt: fetchedAt,
+                unitPriceSource: unitPrice == nil ? nil : .litellmCache,
+                unitPriceFetchedAt: unitPrice?.fetchedAt,
+                inputCostPerMTokUSD: unitPrice?.price.inputCostPerToken.map(perMillionTokens),
+                outputCostPerMTokUSD: unitPrice?.price.outputCostPerToken.map(perMillionTokens),
+                cacheCreationCostPerMTokUSD: unitPrice?.price.cacheCreationInputTokenCost.map(perMillionTokens),
+                cacheReadCostPerMTokUSD: unitPrice?.price.cacheReadInputTokenCost.map(perMillionTokens),
+                effectiveCostPerMTokUSD: effectiveCostPerMTok(accumulator.summary),
+                totalTokens: accumulator.summary.totalTokens,
+                totalCost: accumulator.summary.totalCost,
+                agents: accumulator.agents.sorted()
+            )
+        }
+        .filter { $0.totalTokens > 0 }
+        .sorted { lhs, rhs in
+            if lhs.totalCost == rhs.totalCost { return lhs.modelName < rhs.modelName }
+            return lhs.totalCost > rhs.totalCost
+        }
+    }
+
+    static func mergeModelPriceRecords(_ records: [UsageModelPriceRecord]) -> [UsageModelPriceRecord] {
+        var grouped: [String: UsageModelPriceRecord] = [:]
+        for record in records {
+            let key = "\(record.source.rawValue):\(record.modelName)"
+            if var existing = grouped[key] {
+                existing.totalTokens += record.totalTokens
+                existing.totalCost += record.totalCost
+                existing.effectiveCostPerMTokUSD = effectiveCostPerMTok(UsageSummary(
+                    totalTokens: existing.totalTokens,
+                    totalCost: existing.totalCost
+                ))
+                existing.agents = Array(Set(existing.agents).union(record.agents)).sorted()
+                if existing.fetchedAt == nil {
+                    existing.fetchedAt = record.fetchedAt
+                }
+                if existing.unitPriceSource == nil {
+                    existing.unitPriceSource = record.unitPriceSource
+                }
+                if existing.unitPriceFetchedAt == nil {
+                    existing.unitPriceFetchedAt = record.unitPriceFetchedAt
+                }
+                if existing.inputCostPerMTokUSD == nil {
+                    existing.inputCostPerMTokUSD = record.inputCostPerMTokUSD
+                }
+                if existing.outputCostPerMTokUSD == nil {
+                    existing.outputCostPerMTokUSD = record.outputCostPerMTokUSD
+                }
+                if existing.cacheCreationCostPerMTokUSD == nil {
+                    existing.cacheCreationCostPerMTokUSD = record.cacheCreationCostPerMTokUSD
+                }
+                if existing.cacheReadCostPerMTokUSD == nil {
+                    existing.cacheReadCostPerMTokUSD = record.cacheReadCostPerMTokUSD
+                }
+                grouped[key] = existing
+            } else {
+                grouped[key] = record
+            }
+        }
+
+        return grouped.values.sorted { lhs, rhs in
+            if lhs.totalCost == rhs.totalCost {
+                if lhs.modelName == rhs.modelName { return lhs.source.rawValue < rhs.source.rawValue }
+                return lhs.modelName < rhs.modelName
+            }
+            return lhs.totalCost > rhs.totalCost
+        }
+    }
+
+    private static func effectiveCostPerMTok(_ summary: UsageSummary) -> Double? {
+        guard summary.totalTokens > 0 else { return nil }
+        return summary.totalCost / Double(summary.totalTokens) * 1_000_000
+    }
+
+    private static func perMillionTokens(_ costPerToken: Double) -> Double {
+        costPerToken * 1_000_000
+    }
+
     private static func breakdownTitle(_ suffix: String) -> String {
         switch suffix {
         case "today-models": return "今日模型"
         case "week-models": return "本周模型"
         case "month-models": return "本月模型"
+        case "total-models": return "总计模型"
         default: return "模型"
         }
     }
@@ -431,7 +563,8 @@ public struct UsageCollector: Sendable {
             breakdowns: [
                 UsageBreakdownSection(id: "\(idPrefix)today-models", title: "今日模型", items: breakdownItems(todayRows)),
                 UsageBreakdownSection(id: "\(idPrefix)week-models", title: "本周模型", items: breakdownItems(weekRows)),
-                UsageBreakdownSection(id: "\(idPrefix)month-models", title: "本月模型", items: breakdownItems(monthRows))
+                UsageBreakdownSection(id: "\(idPrefix)month-models", title: "本月模型", items: breakdownItems(monthRows)),
+                UsageBreakdownSection(id: "\(idPrefix)total-models", title: "总计模型", items: breakdownItems(rows))
             ]
         )
     }
@@ -476,7 +609,8 @@ public struct UsageCollector: Sendable {
         return report.daily.map { row in
             var models: [String: UsageSummary] = [:]
             for model in row.modelBreakdowns {
-                models[model.modelName, default: UsageSummary()] = models[model.modelName, default: UsageSummary()] + model.summary
+                let key = Self.modelKey(model.modelName)
+                models[key, default: UsageSummary()] = models[key, default: UsageSummary()] + model.summary
             }
             return DailyRow(period: row.period, summary: row.summary, agents: row.metadata?.agents ?? [], models: models)
         }
@@ -490,6 +624,10 @@ public struct UsageCollector: Sendable {
             guard !row.period.isEmpty else { return nil }
             return DailyRow(period: row.period, summary: row.summary, agents: [agent], models: row.models)
         }
+    }
+
+    static func modelKey(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     // MARK: - Process execution
@@ -589,7 +727,7 @@ public struct UsageCollector: Sendable {
         return calendar.date(byAdding: .day, value: -daysFromMonday, to: dayStart) ?? dayStart
     }
 
-    private static func dateKey(_ date: Date, calendar: Calendar) -> String {
+    static func dateKey(_ date: Date, calendar: Calendar) -> String {
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }
@@ -607,6 +745,32 @@ struct DailyRow {
     var summary: UsageSummary
     var agents: [String]
     var models: [String: UsageSummary]
+}
+
+struct ZCodeTask {
+    var group: DispatchGroup?
+    var result: Box<ZCodeUsageCollector.Result?>?
+
+    static let empty = ZCodeTask(group: nil, result: nil)
+
+    func wait() -> ZCodeUsageCollector.Result {
+        guard let group, let result else { return ZCodeUsageCollector.Result() }
+        group.wait()
+        return result.value ?? ZCodeUsageCollector.Result()
+    }
+}
+
+/// Background fetch of the LiteLLM unit-price catalog, awaited before the
+/// ccusage model-price records are assembled.
+struct CatalogTask {
+    var group: DispatchGroup?
+    var result: Box<LiteLLMPricingCatalog?>?
+
+    func wait() -> LiteLLMPricingCatalog? {
+        guard let group, let result else { return nil }
+        group.wait()
+        return result.value
+    }
 }
 
 /// Lock-guarded holder so reader/worker closures can write results without
@@ -754,11 +918,13 @@ private struct AgentRow: Decodable {
         var built: [String: UsageSummary] = [:]
         if let breakdowns = try? container.decodeIfPresent([CombinedModel].self, forKey: .modelBreakdowns) {
             for model in breakdowns {
-                built[model.modelName, default: UsageSummary()] = built[model.modelName, default: UsageSummary()] + model.summary
+                let key = UsageCollector.modelKey(model.modelName)
+                built[key, default: UsageSummary()] = built[key, default: UsageSummary()] + model.summary
             }
         } else if let object = try? container.decodeIfPresent([String: AgentModel].self, forKey: .models) {
             for (name, model) in object {
-                built[name, default: UsageSummary()] = built[name, default: UsageSummary()] + model.summary
+                let key = UsageCollector.modelKey(name)
+                built[key, default: UsageSummary()] = built[key, default: UsageSummary()] + model.summary
             }
         }
         // Some agents (e.g. codex) report per-model tokens but no per-model cost.
