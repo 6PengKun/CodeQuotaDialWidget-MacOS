@@ -4,12 +4,17 @@ struct LiteLLMModelPrice: Decodable, Equatable, Sendable {
     var inputCostPerToken: Double?
     var outputCostPerToken: Double?
     var cacheCreationInputTokenCost: Double?
+    /// 1-hour-TTL cache-write price (2× input). ccusage bills this rate for
+    /// Claude Code's 1-hour caches; the 5-minute `cacheCreationInputTokenCost`
+    /// (1.25× input) alone can't reconcile with ccusage totals.
+    var cacheCreationInputTokenCostAbove1hr: Double?
     var cacheReadInputTokenCost: Double?
 
     private enum CodingKeys: String, CodingKey {
         case inputCostPerToken = "input_cost_per_token"
         case outputCostPerToken = "output_cost_per_token"
         case cacheCreationInputTokenCost = "cache_creation_input_token_cost"
+        case cacheCreationInputTokenCostAbove1hr = "cache_creation_input_token_cost_above_1hr"
         case cacheReadInputTokenCost = "cache_read_input_token_cost"
     }
 
@@ -17,6 +22,7 @@ struct LiteLLMModelPrice: Decodable, Equatable, Sendable {
         inputCostPerToken != nil
             || outputCostPerToken != nil
             || cacheCreationInputTokenCost != nil
+            || cacheCreationInputTokenCostAbove1hr != nil
             || cacheReadInputTokenCost != nil
     }
 }

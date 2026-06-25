@@ -25,6 +25,10 @@ struct ModelPricesPanelView: View {
         VStack(alignment: .leading, spacing: Theme.spacing) {
             if !records.isEmpty {
                 summaryHeader
+                InlineBanner(
+                    text: "Claude模型的“缓存写”列含两档单价，根据官方 Claude Code 文档，订阅模式下默认写1小时缓存，API模式下默认写5分钟缓存，会根据实际使用情况计费。",
+                    systemImage: "info.circle"
+                )
                 modelPricesTable
             } else {
                 emptyState
@@ -80,14 +84,21 @@ struct ModelPricesPanelView: View {
     // MARK: - 价格表
 
     private var modelPricesTable: some View {
-        ScrollView([.horizontal, .vertical]) {
-            VStack(spacing: 0) {
-                tableHeader
-                ForEach(Array(records.enumerated()), id: \.element.id) { index, record in
-                    tableRow(record, index: index)
+        GeometryReader { geometry in
+            ScrollView([.horizontal, .vertical]) {
+                VStack(spacing: 0) {
+                    tableHeader
+                    ForEach(Array(records.enumerated()), id: \.element.id) { index, record in
+                        tableRow(record, index: index)
+                    }
                 }
+                .frame(minWidth: PriceCol.totalWidth, alignment: .leading)
             }
-            .frame(minWidth: PriceCol.totalWidth, alignment: .leading)
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height,
+                alignment: .topLeading
+            )
         }
         .frame(minHeight: 360)
         .cardSurface(padded: false)
@@ -98,7 +109,7 @@ struct ModelPricesPanelView: View {
             headerCell("模型", width: PriceCol.model, align: .leading)
             headerCell("来源", width: PriceCol.source, align: .leading)
             headerCell("输入/1M", width: PriceCol.price, align: .trailing)
-            headerCell("缓存写/1M", width: PriceCol.price, align: .trailing)
+            headerCell("缓存写/1M", width: PriceCol.cacheWrite, align: .trailing)
             headerCell("缓存读/1M", width: PriceCol.price, align: .trailing)
             headerCell("输出/1M", width: PriceCol.price, align: .trailing)
             headerCell("有效/1M", width: PriceCol.price, align: .trailing)
@@ -123,7 +134,7 @@ struct ModelPricesPanelView: View {
                 .frame(width: PriceCol.source, alignment: .leading)
 
             priceCell(record.inputCostPerMTokUSD)
-            priceCell(record.cacheCreationCostPerMTokUSD)
+            cacheWriteCell(record)
             priceCell(record.cacheReadCostPerMTokUSD)
             priceCell(record.outputCostPerMTokUSD)
             priceCell(record.effectiveCostPerMTokUSD, emphasized: true)
@@ -149,6 +160,22 @@ struct ModelPricesPanelView: View {
     private func rowBackground(index: Int, isHovered: Bool) -> Color {
         if isHovered { return Color.accentColor.opacity(0.10) }
         return index.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.035)
+    }
+
+    /// 缓存写一列同时展示两档 TTL 单价：$6.25(5m) / $10(1h)。只有 5 分钟价时退回单值。
+    private func cacheWriteCell(_ record: UsageModelPriceRecord) -> some View {
+        let text: String
+        if let m5 = record.cacheCreationCostPerMTokUSD, let h1 = record.cacheCreation1hCostPerMTokUSD {
+            text = "\(ModelPricesFormat.price(m5))(5m) / \(ModelPricesFormat.price(h1))(1h)"
+        } else {
+            text = ModelPricesFormat.price(record.cacheCreationCostPerMTokUSD)
+        }
+        return Text(text)
+            .font(.callout)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(width: PriceCol.cacheWrite, alignment: .trailing)
     }
 
     private func priceCell(_ value: Double?, emphasized: Bool = false) -> some View {
@@ -236,12 +263,13 @@ private enum PriceCol {
     static let model: CGFloat = 132
     static let source: CGFloat = 60
     static let price: CGFloat = 84
+    static let cacheWrite: CGFloat = 158 // 同列展示 5m / 1h 两档单价，比普通价格列宽
     static let tokens: CGFloat = 72
     static let cost: CGFloat = 82
     static let spacing: CGFloat = 14
 
     static var totalWidth: CGFloat {
-        model + source + price * 5 + tokens + cost
+        model + source + price * 4 + cacheWrite + tokens + cost
             + spacing * 8 + 28 // 8 个间隔 + 左右内边距
     }
 }

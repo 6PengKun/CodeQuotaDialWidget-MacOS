@@ -8,8 +8,14 @@ struct ContentView: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 208, ideal: 224, max: 280)
         } detail: {
-            detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            GeometryReader { geometry in
+                detail
+                    .frame(
+                        width: geometry.size.width,
+                        height: geometry.size.height,
+                        alignment: .topLeading
+                    )
+            }
         }
         .navigationSplitViewStyle(.balanced)
     }

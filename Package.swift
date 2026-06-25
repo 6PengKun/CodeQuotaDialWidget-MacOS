@@ -157,6 +157,11 @@ let package = Package(
             dependencies: ["QuotaProcessSupport"]
         ),
         .target(
+            name: "UsagePanelSupport",
+            dependencies: ["CodexQuotaCore", "ClaudeQuotaCore", "GLMQuotaCore"],
+            path: "XcodeApp/CodeQuotaDialXcode/UsagePanelSupport"
+        ),
+        .target(
             name: "UsageQuotaDialWidget",
             dependencies: ["UsageQuotaCore"]
         ),
@@ -167,6 +172,10 @@ let package = Package(
         .testTarget(
             name: "UsageQuotaCoreTests",
             dependencies: ["UsageQuotaCore"]
+        ),
+        .testTarget(
+            name: "UsagePanelSupportTests",
+            dependencies: ["UsagePanelSupport"]
         )
     ]
 )

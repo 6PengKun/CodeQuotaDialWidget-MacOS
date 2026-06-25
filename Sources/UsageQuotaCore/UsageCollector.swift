@@ -421,6 +421,7 @@ public struct UsageCollector: Sendable {
                 inputCostPerMTokUSD: unitPrice?.price.inputCostPerToken.map(perMillionTokens),
                 outputCostPerMTokUSD: unitPrice?.price.outputCostPerToken.map(perMillionTokens),
                 cacheCreationCostPerMTokUSD: unitPrice?.price.cacheCreationInputTokenCost.map(perMillionTokens),
+                cacheCreation1hCostPerMTokUSD: unitPrice?.price.cacheCreationInputTokenCostAbove1hr.map(perMillionTokens),
                 cacheReadCostPerMTokUSD: unitPrice?.price.cacheReadInputTokenCost.map(perMillionTokens),
                 effectiveCostPerMTokUSD: effectiveCostPerMTok(accumulator.summary),
                 totalTokens: accumulator.summary.totalTokens,
@@ -464,6 +465,9 @@ public struct UsageCollector: Sendable {
                 }
                 if existing.cacheCreationCostPerMTokUSD == nil {
                     existing.cacheCreationCostPerMTokUSD = record.cacheCreationCostPerMTokUSD
+                }
+                if existing.cacheCreation1hCostPerMTokUSD == nil {
+                    existing.cacheCreation1hCostPerMTokUSD = record.cacheCreation1hCostPerMTokUSD
                 }
                 if existing.cacheReadCostPerMTokUSD == nil {
                     existing.cacheReadCostPerMTokUSD = record.cacheReadCostPerMTokUSD

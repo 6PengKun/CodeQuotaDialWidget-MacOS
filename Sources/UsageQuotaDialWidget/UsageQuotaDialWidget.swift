@@ -141,9 +141,11 @@ private struct LargeUsageDashboard: View {
                         Text(costText(snapshot.daily.totalCost))
                             .font(.system(size: 32, weight: .bold, design: .rounded))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.75)
+                            .minimumScaleFactor(0.5)
                         if let delta = widgetTodayDeltaPercent(snapshot.weekDays) {
                             WidgetDelta(percent: delta)
+                                .fixedSize()
+                                .layoutPriority(1)
                         }
                     }
                     Text("\(compactNumber(snapshot.daily.totalTokens)) tokens")
@@ -161,7 +163,7 @@ private struct LargeUsageDashboard: View {
                     }
                     CompactUsageTile(title: "总计", summary: snapshot.total)
                 }
-                .frame(width: 166)
+                .frame(width: 146)
             }
 
             VStack(alignment: .leading, spacing: 5) {
@@ -185,9 +187,10 @@ private struct DailyTokenValues: View {
     var summary: UsageSummary
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 4) {
             TokenMetric(title: "输入", value: summary.inputTokens)
             TokenMetric(title: "输出", value: summary.outputTokens)
+            TokenMetric(title: "缓存写", value: summary.cacheCreationTokens)
             TokenMetric(title: "缓存读", value: summary.cacheReadTokens)
         }
     }
@@ -203,11 +206,12 @@ private struct TokenMetric: View {
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
-            Text(compactNumber(value))
+                .minimumScaleFactor(0.8)
+            Text(compactTokenMetric(value))
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -431,12 +435,31 @@ private func costText(_ value: Double) -> String {
 
 private func compactNumber(_ value: Int) -> String {
     let number = Double(value)
+    if number >= 1_000_000_000 {
+        return String(format: "%.1fB", number / 1_000_000_000)
+    }
     if number >= 1_000_000 {
         return String(format: "%.1fM", number / 1_000_000)
     }
     if number >= 1_000 {
         return String(format: "%.1fK", number / 1_000)
     }
+    return "\(value)"
+}
+
+/// Tighter token formatter for the four-up daily breakdown row, where columns
+/// are too narrow for a decimal on large values. Drops the decimal once the
+/// mantissa reaches 10, so every value stays ≤4 chars (1.2B / 126M / 2.5M /
+/// 731K) and the four columns render at one uniform size without truncating.
+private func compactTokenMetric(_ value: Int) -> String {
+    let number = Double(value)
+    func scaled(_ divisor: Double, _ suffix: String) -> String {
+        let v = number / divisor
+        return v < 10 ? String(format: "%.1f%@", v, suffix) : String(format: "%.0f%@", v, suffix)
+    }
+    if number >= 1_000_000_000 { return scaled(1_000_000_000, "B") }
+    if number >= 1_000_000 { return scaled(1_000_000, "M") }
+    if number >= 1_000 { return scaled(1_000, "K") }
     return "\(value)"
 }
 

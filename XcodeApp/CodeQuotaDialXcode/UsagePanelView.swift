@@ -1,4 +1,7 @@
+import ClaudeQuotaCore
 import Combine
+import CodexQuotaCore
+import GLMQuotaCore
 import SwiftUI
 import UsageQuotaCore
 import WidgetKit
@@ -15,6 +18,7 @@ struct UsagePanelView: View {
     /// Custom date-range picker state.
     @State private var rangeStart: Date = Calendar.current.date(byAdding: .day, value: -6, to: .now) ?? .now
     @State private var rangeEnd: Date = .now
+    @State private var rangeShortcuts: [UsageResetShortcut] = []
     @StateObject private var agent = LaunchAgentController(
         label: LaunchAgentLabels.usage.label,
         plistPath: LaunchAgentLabels.usage.plist
@@ -119,6 +123,8 @@ struct UsagePanelView: View {
             selection: $detailSelection,
             rangeStart: $rangeStart,
             rangeEnd: $rangeEnd,
+            shortcuts: rangeShortcuts,
+            selectedScopeID: selectedScopeID,
             todayDeltaPercent: usageTodayDeltaPercent(selectedScope?.weekDays ?? [])
         )
     }
@@ -176,6 +182,7 @@ struct UsagePanelView: View {
         } catch {
             errorText = "暂无消耗快照。"
         }
+        loadRangeShortcuts()
     }
 
     private func refresh() async {
@@ -192,6 +199,7 @@ struct UsagePanelView: View {
             snapshot = newSnapshot
             errorText = newSnapshot.error
             normalizeSelectedScope()
+            loadRangeShortcuts()
         } catch {
             errorText = "保存消耗快照失败：\(error.localizedDescription)"
         }
@@ -202,6 +210,14 @@ struct UsagePanelView: View {
         if !ids.contains(selectedScopeID) {
             selectedScopeID = UsageScopeData.overviewID
         }
+    }
+
+    private func loadRangeShortcuts() {
+        rangeShortcuts = UsageRangeShortcutLogic.shortcuts(
+            codex: try? CodexQuotaSnapshotStore().load(),
+            claude: try? ClaudeQuotaSnapshotStore().load(),
+            glm: try? GLMQuotaSnapshotStore().load()
+        )
     }
 }
 
@@ -576,6 +592,8 @@ private struct UsageDetailCard: View {
     @Binding var selection: CalendarDetailSelection
     @Binding var rangeStart: Date
     @Binding var rangeEnd: Date
+    var shortcuts: [UsageResetShortcut]
+    var selectedScopeID: String
     var todayDeltaPercent: Double?
 
     private var dayByPeriod: [String: UsageCalendarDay] {
@@ -698,22 +716,36 @@ private struct UsageDetailCard: View {
 
             Divider()
 
-            HStack(spacing: 6) {
-                Text("区间")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                CompactDatePickerButton(
-                    date: $rangeStart,
-                    range: datePickerRange
-                )
-                Text("至")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                CompactDatePickerButton(
-                    date: $rangeEnd,
-                    range: datePickerRange
-                )
-                Spacer(minLength: 0)
+            HStack(alignment: .center, spacing: 8) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Text("区间")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        CompactDatePickerButton(
+                            date: $rangeStart,
+                            range: datePickerRange
+                        )
+                        Text("至")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                        CompactDatePickerButton(
+                            date: $rangeEnd,
+                            range: datePickerRange
+                        )
+                        ForEach(shortcuts) { shortcut in
+                            Button(shortcut.title) {
+                                applyShortcut(shortcut)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                            .font(.system(size: 11, weight: .medium))
+                            .disabled(shortcut.resetAt == nil)
+                        }
+                    }
+                    .padding(.vertical, 1)
+                }
+
                 Button("应用") {
                     normalizeRangeDates()
                     let range = resolvedRange
@@ -775,6 +807,20 @@ private struct UsageDetailCard: View {
             rangeStart = end
             rangeEnd = start
         }
+    }
+
+    private func applyShortcut(_ shortcut: UsageResetShortcut) {
+        guard let application = UsageRangeShortcutLogic.apply(
+            shortcut: shortcut,
+            selectedScopeID: selectedScopeID,
+            selectableRange: datePickerRange,
+            now: Date(),
+            calendar: .current
+        ) else { return }
+
+        rangeStart = application.rangeStart
+        rangeEnd = application.rangeEnd
+        selection = .range(start: application.selectionStartPeriod, end: application.selectionEndPeriod)
     }
 }
 
@@ -861,6 +907,7 @@ private struct TokenValueRow: View {
         HStack(spacing: Theme.cardSpacing) {
             TokenValue(label: "输入", value: summary?.inputTokens)
             TokenValue(label: "输出", value: summary?.outputTokens)
+            TokenValue(label: "缓存写", value: summary?.cacheCreationTokens)
             TokenValue(label: "缓存读", value: summary?.cacheReadTokens)
         }
     }

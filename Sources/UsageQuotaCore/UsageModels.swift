@@ -139,6 +139,9 @@ public struct UsageModelPriceRecord: Codable, Equatable, Sendable, Identifiable 
     public var inputCostPerMTokUSD: Double?
     public var outputCostPerMTokUSD: Double?
     public var cacheCreationCostPerMTokUSD: Double?
+    /// 1-hour-TTL cache-write unit price (2× input). Distinct from the 5-minute
+    /// `cacheCreationCostPerMTokUSD` (1.25× input); ccusage bills the 1-hour rate.
+    public var cacheCreation1hCostPerMTokUSD: Double?
     public var cacheReadCostPerMTokUSD: Double?
     public var effectiveCostPerMTokUSD: Double?
     public var totalTokens: Int
@@ -156,6 +159,7 @@ public struct UsageModelPriceRecord: Codable, Equatable, Sendable, Identifiable 
         inputCostPerMTokUSD: Double? = nil,
         outputCostPerMTokUSD: Double? = nil,
         cacheCreationCostPerMTokUSD: Double? = nil,
+        cacheCreation1hCostPerMTokUSD: Double? = nil,
         cacheReadCostPerMTokUSD: Double? = nil,
         effectiveCostPerMTokUSD: Double? = nil,
         totalTokens: Int = 0,
@@ -170,6 +174,7 @@ public struct UsageModelPriceRecord: Codable, Equatable, Sendable, Identifiable 
         self.inputCostPerMTokUSD = inputCostPerMTokUSD
         self.outputCostPerMTokUSD = outputCostPerMTokUSD
         self.cacheCreationCostPerMTokUSD = cacheCreationCostPerMTokUSD
+        self.cacheCreation1hCostPerMTokUSD = cacheCreation1hCostPerMTokUSD
         self.cacheReadCostPerMTokUSD = cacheReadCostPerMTokUSD
         self.effectiveCostPerMTokUSD = effectiveCostPerMTokUSD
         self.totalTokens = totalTokens
