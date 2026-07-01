@@ -91,6 +91,7 @@ struct TagBadge: View {
 /// 工具栏里的刷新按钮（带进行中态）。
 struct RefreshButton: View {
     let isRefreshing: Bool
+    var helpText: String = "立即刷新"
     let action: () async -> Void
 
     var body: some View {
@@ -104,7 +105,7 @@ struct RefreshButton: View {
             }
         }
         .disabled(isRefreshing)
-        .help("立即刷新")
+        .help(helpText)
     }
 }
 

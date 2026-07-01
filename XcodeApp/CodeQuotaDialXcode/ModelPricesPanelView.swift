@@ -21,10 +21,22 @@ struct ModelPricesPanelView: View {
     private var totalCost: Double { records.reduce(0) { $0 + $1.totalCost } }
     private var totalTokens: Int { records.reduce(0) { $0 + $1.totalTokens } }
 
+    /// LiteLLM 价格表的抓取时间：来自任意一条 ccusage 记录的 `unitPriceFetchedAt`
+    /// （同一次 collect() 内所有 ccusage 记录共享同一个 LiteLLM 目录抓取时间）。
+    private var liteLLMFetchedAt: Date? {
+        records.first { $0.source == .ccusageReport }?.unitPriceFetchedAt
+    }
+
+    /// Z.AI 价格表的抓取时间：来自任意一条 Z.AI 官方/缓存记录的 `fetchedAt`。
+    private var zaiFetchedAt: Date? {
+        records.first { $0.source == .zaiOfficial || $0.source == .zaiCache }?.fetchedAt
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.spacing) {
             if !records.isEmpty {
                 summaryHeader
+                pricingSourceTimestamps
                 InlineBanner(
                     text: "Claude模型的“缓存写”列含两档单价，根据官方 Claude Code 文档，订阅模式下默认写1小时缓存，API模式下默认写5分钟缓存，会根据实际使用情况计费。",
                     systemImage: "info.circle"
@@ -43,7 +55,10 @@ struct ModelPricesPanelView: View {
         .navigationSubtitle(snapshot.map { "更新于 \(quotaPanelTimeFormatter.string(from: $0.generatedAt))" } ?? "未刷新")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                RefreshButton(isRefreshing: isRefreshing) { await refresh() }
+                RefreshButton(
+                    isRefreshing: isRefreshing,
+                    helpText: "强制重新抓取最新模型价格，并刷新当前用量数据"
+                ) { await refresh() }
             }
         }
         .onAppear {
@@ -79,6 +94,24 @@ struct ModelPricesPanelView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
         .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var pricingSourceTimestamps: some View {
+        HStack(spacing: 16) {
+            pricingSourceStamp(label: "LiteLLM", date: liteLLMFetchedAt)
+            pricingSourceStamp(label: "Z.AI", date: zaiFetchedAt)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func pricingSourceStamp(label: String, date: Date?) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "clock")
+                .font(.caption2)
+            Text(date.map { "\(label) 价格更新于 \(quotaPanelTimeFormatter.string(from: $0))" } ?? "\(label) 价格：暂无抓取记录")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 
     // MARK: - 价格表
@@ -129,6 +162,7 @@ struct ModelPricesPanelView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(width: PriceCol.model, alignment: .leading)
+                .help(record.modelName)
 
             PriceSourceBadge(text: sourceText(record.source), tint: sourceTint(record.source))
                 .frame(width: PriceCol.source, alignment: .leading)
@@ -224,7 +258,7 @@ struct ModelPricesPanelView: View {
         defer { isRefreshing = false }
 
         let newSnapshot = await Task.detached {
-            UsageCollector().collect()
+            UsageCollector().collect(mode: .online)
         }.value
 
         do {

@@ -105,7 +105,10 @@ public struct ClaudeQuotaCollector: Sendable {
             QuotaProcessSupport.curlConfigLine("header", "anthropic-beta: oauth-2025-04-20"),
             QuotaProcessSupport.curlConfigLine("header", "Accept: application/json")
         ]
-        if let proxy = ClaudeQuotaProxyConfig.proxyURL, !proxy.isEmpty {
+        if let proxy = QuotaProxyResolver.curlProxy(
+            for: "https://api.anthropic.com/api/oauth/usage",
+            manualOverride: ClaudeQuotaProxyConfig.proxyURL
+        ) {
             configLines.append(QuotaProcessSupport.curlConfigLine("proxy", proxy))
         }
 

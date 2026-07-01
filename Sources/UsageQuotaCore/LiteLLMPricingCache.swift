@@ -134,7 +134,10 @@ struct LiteLLMPricingResolver: Sendable {
             QuotaProcessSupport.curlConfigLine("max-time", "60"),
             QuotaProcessSupport.curlConfigLine("url", Self.pricingURL)
         ]
-        if let proxy = UsageProxyConfig.proxyURL, !proxy.isEmpty {
+        if let proxy = QuotaProxyResolver.curlProxy(
+            for: Self.pricingURL,
+            manualOverride: UsageProxyConfig.proxyURL
+        ) {
             configLines.append(QuotaProcessSupport.curlConfigLine("proxy", proxy))
         }
 

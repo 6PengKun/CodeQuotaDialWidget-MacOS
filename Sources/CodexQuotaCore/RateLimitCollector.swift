@@ -79,7 +79,10 @@ public struct CodexQuotaCollector: Sendable {
             QuotaProcessSupport.curlConfigLine("header", "User-Agent: codex-cli"),
             QuotaProcessSupport.curlConfigLine("header", "Accept: application/json")
         ]
-        if let proxy = CodexQuotaProxyConfig.proxyURL, !proxy.isEmpty {
+        if let proxy = QuotaProxyResolver.curlProxy(
+            for: "https://chatgpt.com/backend-api/wham/usage",
+            manualOverride: CodexQuotaProxyConfig.proxyURL
+        ) {
             configLines.append(QuotaProcessSupport.curlConfigLine("proxy", proxy))
         }
         if let accountId = credentials.accountId, !accountId.isEmpty {

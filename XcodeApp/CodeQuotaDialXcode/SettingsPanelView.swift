@@ -48,7 +48,7 @@ struct SettingsPanelView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("网络代理", systemImage: "network")
                 .font(.callout.weight(.semibold))
-            Text("供 Codex / Claude / GLM 拉取额度时使用。留空表示直连。")
+            Text("供 Codex / Claude / GLM 拉取额度时使用。留空=自动跟随 macOS 系统代理；填写=覆盖系统代理。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             TextField("http://127.0.0.1:7897", text: $proxyURL)

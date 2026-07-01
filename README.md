@@ -7,13 +7,13 @@
   <img src="https://img.shields.io/badge/Xcode-16%2B-147EFB" alt="Xcode" />
   <img src="https://img.shields.io/badge/Swift-Package-orange" alt="Swift" />
 </p>
-
 <p align="center">
   <img src="assets/example_all.png" alt="组件示例" width="800" />
 </p>
 <p align="center">
   <img src="assets/example_desktop.png" alt="桌面效果" width="800" />
 </p>
+
 
 
 ---
@@ -100,7 +100,7 @@
 **完全零配置：直接运行 `script/install.command` 即可，没有任何配置文件。** 安装脚本会：
 
 - **自动检测签名身份、Team ID、App Group**：从 keychain 里的 Apple Development 签名身份推导（Team ID 用"签一个探针读 TeamIdentifier"的权威方式获取，App Group 按 `<TeamID>.group.local.<name>` 约定生成）。
-- **代理 / 远端 SSH 在 app 内配置**：装好后在 app 的「设置」标签页填代理和远端主机，保存后点对应面板「刷新」或等后台自动刷新即可生效，**无需重装**。它们存放在运行时配置 `~/Library/Application Support/CodeQuotaDial/runtime-config.json`（首次安装时若 shell 里已有代理环境变量会自动带入）。
+- **代理 / 远端 SSH 在 app 内配置**：装好后在 app 的「设置」标签页填代理和远端主机，保存后点对应面板「刷新」或等后台自动刷新即可生效，**无需重装**。它们存放在运行时配置 `~/Library/Application Support/CodeQuotaDial/runtime-config.json`；`proxyURL` 留空时会自动跟随当前 macOS 系统代理，填写后则覆盖系统代理。
 - **安装目录 / 刷新间隔 / PATH** 都有内置默认值。
 
 ### 可选：环境变量覆盖
@@ -142,7 +142,7 @@ cd CodeQuotaDialWidget
 4. 使用 `ad-hoc` 方式重签名
 5. 安装到 `/Applications/CodeQuotaDialXcode.app`
 6. 生成并加载五个 `LaunchAgent`
-7. 初始化运行时配置 `runtime-config.json`（代理 / 远端主机，可随后在 app 内「设置」修改）
+7. 初始化运行时配置 `runtime-config.json`（代理覆盖 / 远端主机，可随后在 app 内「设置」修改）
 
 安装完成后会自动打开 app，接下来按下面的[使用](#使用)说明操作即可。
 
@@ -170,7 +170,7 @@ cd CodeQuotaDialWidget
 ### 2. 首次需要做的配置（都在 app 内，无需重装）
 
 - **GLM**：进 **GLM 页面**，在「API Key」卡片粘贴你的 GLM API Key 后保存（粘贴时可见，保存后隐藏）。
-- **代理**（如果你的网络访问 Codex/Claude 接口需要代理）：进 **设置** 页填 `http://127.0.0.1:端口`，保存后回各页点刷新即可生效。
+- **代理**：默认留空即可自动跟随 macOS 系统代理；如果你想覆盖系统代理，再进 **设置** 页手填 `http://127.0.0.1:端口`，保存后回各页点刷新即可生效。
 - **远端多端统计**（可选）：进 **设置** 页，在「远端 SSH 主机」每行填一个 host（需免密 SSH 且远端自带 `ccusage`）。
 - **ZCode 用量**（可选）：默认开启，会自动读取本机 ZCode CLI 的使用记录并并入「消耗统计」，无需任何配置；若你不使用，可在 **设置** 页关闭「ZCode 用量扩展」。
 
@@ -207,7 +207,7 @@ LaunchAgent
 
 ```text
 本机:    npx ccusage@latest daily --json    ─┐
-本机:    ZCode CLI 本地使用记录              ─┤
+本机:    ZCode CLI 本地使用记录               ─┤
 远端 1:  ssh <host1> ccusage daily --json   ─┤
 远端 N:  ssh <hostN> ccusage daily --json   ─┴─► 按日合并 ─► 本地推导 周/月/总/趋势/模型分布
 ```
@@ -319,7 +319,7 @@ tail -n 100 Runtime/antigravity/logs/refresh.err.log
 
 常见原因：
 
-- 代理未配置正确（在 app 内「设置」标签页填写）。
+- 系统代理未开启，或 app 内「设置」里保存了错误的代理覆盖值。
 - Codex 未使用 ChatGPT OAuth 登录，或 Keychain / `~/.codex/auth.json` 中没有可用凭据。
 - Claude Code 未登录，或 Keychain 中没有 `Claude Code-credentials`。
 - 未在 GLM 组件页面填写 API Key（也没有旧的 `~/.glm_quota_config.json` 后备）。
@@ -352,7 +352,7 @@ launchctl kickstart -k "gui/$(id -u)/local.glm-quota-dial.refresh"
 ./script/install.command
 ```
 
-因为新机器的 `Team ID`、App Group entitlement、LaunchAgent 路径都可能不同，脚本会按新机器重新检测并构建。前提同样是新机器已有 Apple Development 签名身份（见[前提条件](#前提条件)）。代理 / 远端主机不随仓库迁移，在新机器装好后到 app 内「设置」重新填写即可。
+因为新机器的 `Team ID`、App Group entitlement、LaunchAgent 路径都可能不同，脚本会按新机器重新检测并构建。前提同样是新机器已有 Apple Development 签名身份（见[前提条件](#前提条件)）。代理覆盖 / 远端主机不随仓库迁移；新机器默认跟随其自己的 macOS 系统代理，如需覆盖再到 app 内「设置」填写即可。
 
 ## 卸载
 
@@ -387,5 +387,5 @@ launchctl kickstart -k "gui/$(id -u)/local.glm-quota-dial.refresh"
 - `Runtime/antigravity/AntigravityQuotaSnapshotTool`
 - `Runtime/usage/UsageQuotaSnapshotTool`
 - `Runtime/*/logs`
-- `~/Library/Application Support/CodeQuotaDial`（运行时配置：代理 / 远端主机）
+- `~/Library/Application Support/CodeQuotaDial`（运行时配置：代理覆盖 / 远端主机）
 - WidgetKit / Chrono 相关缓存

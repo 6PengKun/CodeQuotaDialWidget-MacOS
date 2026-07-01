@@ -79,7 +79,17 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "QuotaProcessSupport"
+            name: "QuotaProxyCFSupport",
+            path: "Sources/QuotaProxyCFSupport",
+            publicHeadersPath: "include",
+            linkerSettings: [
+                .linkedFramework("CFNetwork"),
+                .linkedFramework("CoreFoundation")
+            ]
+        ),
+        .target(
+            name: "QuotaProcessSupport",
+            dependencies: ["QuotaProxyCFSupport"]
         ),
         .testTarget(
             name: "QuotaProcessSupportTests",

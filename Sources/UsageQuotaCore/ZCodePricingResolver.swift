@@ -146,7 +146,10 @@ struct ZCodePricingResolver: Sendable {
             QuotaProcessSupport.curlConfigLine("url", Self.pricingURL),
             QuotaProcessSupport.curlConfigLine("header", "Accept: text/html,application/xhtml+xml")
         ]
-        if let proxy = UsageProxyConfig.proxyURL, !proxy.isEmpty {
+        if let proxy = QuotaProxyResolver.curlProxy(
+            for: Self.pricingURL,
+            manualOverride: UsageProxyConfig.proxyURL
+        ) {
             configLines.append(QuotaProcessSupport.curlConfigLine("proxy", proxy))
         }
 

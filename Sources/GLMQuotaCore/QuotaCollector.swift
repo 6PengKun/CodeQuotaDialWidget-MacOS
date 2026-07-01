@@ -27,7 +27,10 @@ public struct GLMQuotaCollector: Sendable {
             QuotaProcessSupport.curlConfigLine("header", "Accept-Language: en-US,en"),
             QuotaProcessSupport.curlConfigLine("header", "Content-Type: application/json")
         ]
-        if let proxy = GLMQuotaProxyConfig.proxyURL, !proxy.isEmpty {
+        if let proxy = QuotaProxyResolver.curlProxy(
+            for: "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+            manualOverride: GLMQuotaProxyConfig.proxyURL
+        ) {
             configLines.append(QuotaProcessSupport.curlConfigLine("proxy", proxy))
         }
 

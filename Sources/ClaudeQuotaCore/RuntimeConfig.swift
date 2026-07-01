@@ -23,7 +23,8 @@ enum QuotaRuntimeConfigFile {
 }
 
 public enum ClaudeQuotaProxyConfig {
-    /// Proxy URL passed to curl via `--proxy`. `nil`/empty means a direct call.
+    /// Manual proxy override passed to curl via `--proxy`. `nil`/empty means
+    /// the collector falls back to the current macOS system proxy.
     public static var proxyURL: String? {
         guard let value = QuotaRuntimeConfigFile.object()["proxyURL"] as? String, !value.isEmpty else {
             return nil

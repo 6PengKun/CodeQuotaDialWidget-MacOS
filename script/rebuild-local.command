@@ -134,8 +134,9 @@ write_runtime_config() {
   # Proxy and remote SSH hosts are runtime data the app edits live, so they live
   # in this shared JSON file (read by both the app and the snapshot tools on
   # every refresh) rather than baked into the binaries. Seed it on first install
-  # only — from the shell's proxy environment / any USAGE_REMOTE_HOST env var —
-  # and never clobber later in-app edits. Normally left empty and set in the app.
+  # only — from any USAGE_REMOTE_HOST env var — and never clobber later in-app
+  # edits. proxyURL starts empty so the app follows the current macOS system
+  # proxy unless the user later fills an explicit override in Settings.
   if [[ -f "$RUNTIME_CONFIG_FILE" ]]; then
     echo "==> Keeping existing runtime config: $RUNTIME_CONFIG_FILE"
     # The file holds the GLM API key in plaintext; tighten perms on every install
@@ -146,9 +147,6 @@ write_runtime_config() {
 
   echo "==> Seeding runtime config: $RUNTIME_CONFIG_FILE"
   mkdir -p "$(dirname "$RUNTIME_CONFIG_FILE")"
-
-  # Prefer HTTPS_PROXY (every quota endpoint is https), then HTTP_PROXY, ALL_PROXY.
-  local proxy="${HTTPS_PROXY:-${HTTP_PROXY:-${ALL_PROXY:-}}}"
 
   local hosts_json="" host
   local -a parts
@@ -162,7 +160,7 @@ write_runtime_config() {
 
   cat > "$RUNTIME_CONFIG_FILE" <<EOF
 {
-  "proxyURL" : "$(json_escape "$proxy")",
+  "proxyURL" : "",
   "remoteHosts" : [$hosts_json]
 }
 EOF

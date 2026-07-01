@@ -47,7 +47,9 @@ public enum UsageZCodeConfig {
 }
 
 public enum UsageProxyConfig {
-    /// Proxy URL passed to curl for optional online model pricing refresh.
+    /// Manual proxy override passed to curl for optional online model pricing
+    /// refresh. `nil`/empty means the caller falls back to the current macOS
+    /// system proxy.
     public static var proxyURL: String? {
         guard let value = QuotaRuntimeConfigFile.object()["proxyURL"] as? String else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
